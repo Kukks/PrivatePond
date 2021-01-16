@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivatePond", "PrivatePond\PrivatePond.csproj", "{F50EE0C2-F7D0-42A3-A991-F626E20F8C74}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivatePond", "PrivatePond\PrivatePond.csproj", "{3BD46341-F865-407B-A8FD-F31555A925C0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -8,9 +8,9 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{F50EE0C2-F7D0-42A3-A991-F626E20F8C74}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F50EE0C2-F7D0-42A3-A991-F626E20F8C74}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F50EE0C2-F7D0-42A3-A991-F626E20F8C74}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F50EE0C2-F7D0-42A3-A991-F626E20F8C74}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3BD46341-F865-407B-A8FD-F31555A925C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3BD46341-F865-407B-A8FD-F31555A925C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3BD46341-F865-407B-A8FD-F31555A925C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3BD46341-F865-407B-A8FD-F31555A925C0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

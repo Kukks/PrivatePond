@@ -20,7 +20,27 @@
         "PP_NBXPLORER__EXPLORERURI": "http://localhost:65467",
         "PP_NBXPLORER__COOKIEFILE": "",
         "PP_PRIVATEPOND__NETWORKTYPE": "regtest",
-        "PP_CONNECTIONSTRINGS__PRIVATEPONDDATABASE": "User ID=postgres;Host=127.0.0.1;Port=65466;Database=privatepondregtest"
+        "PP_CONNECTIONSTRINGS__PRIVATEPONDDATABASE": "User ID=postgres;Host=127.0.0.1;Port=65466;Database=privatepondregtest",
+        
+        "PP_PRIVATEPOND__WALLETS__0__DerivationScheme":  "tpubDCZB6sR48s4T5Cr8qHUYSZEFCQMMHRg8AoVKVmvcAP5bRw7ArDKeoNwKAJujV3xCPkBvXH5ejSgbgyN6kREmF7sMd41NdbuHa8n1DZNxSMg",
+        "PP_PRIVATEPOND__WALLETS__0__AllowForDeposits":  "true",
+        "PP_PRIVATEPOND__WALLETS__0__BatchTransfersEvery":  "5",
+        "PP_PRIVATEPOND__WALLETS__0__RootedKeyPaths__0":  "5c9e228d/m/84'/1'/0'",
+        "PP_PRIVATEPOND__WALLETS__0__WalletDestinationAfterMaximumReached":  "2-of-tpubDFfb9gesTokwrY5UHgzMt5b4uf2v9SZc5eRuc6xG6SWHJBiFu8e3YpP3QfqPL54qpE7MvsAjdDS5JUGcp5Kbqw2VfWWzoU9JTeuKKBEBE67-tpubDEGquuorgFNbDrg8vepq1HnaV2mgQu9TcSBgBYfXw4AX8VMgkWqvkxHNuJmiah8iVnA3Hgj4cSvaGAXEnq814yC6hMEreckLsd7zyLL3o76",
+        "PP_PRIVATEPOND__WALLETS__0__WalletReplenishmentSource":  "2-of-tpubDFfb9gesTokwrY5UHgzMt5b4uf2v9SZc5eRuc6xG6SWHJBiFu8e3YpP3QfqPL54qpE7MvsAjdDS5JUGcp5Kbqw2VfWWzoU9JTeuKKBEBE67-tpubDEGquuorgFNbDrg8vepq1HnaV2mgQu9TcSBgBYfXw4AX8VMgkWqvkxHNuJmiah8iVnA3Hgj4cSvaGAXEnq814yC6hMEreckLsd7zyLL3o76",
+        
+        "PP_PRIVATEPOND__WALLETS__1__DerivationScheme":  "tpubDCHRnuvE95JrpEVTUmr36sK3K9ADf3s3aztpXzL8coBeCTE8cHV8PjxS6SjWJM3GfPn798gyEa3dRPgjoUDSuNfuC9xz4PHznwKEk2XL7X1-[p2sh]",
+        "PP_PRIVATEPOND__WALLETS__1__AllowForDeposits":  "true",
+        "PP_PRIVATEPOND__WALLETS__1__BatchTransfersEvery":  "5",
+        "PP_PRIVATEPOND__WALLETS__1__RootedKeyPaths__0":  "5c9e228d/m/49'/1'/0'",
+        "PP_PRIVATEPOND__WALLETS__1__WalletDestinationAfterMaximumReached":  "2-of-tpubDFfb9gesTokwrY5UHgzMt5b4uf2v9SZc5eRuc6xG6SWHJBiFu8e3YpP3QfqPL54qpE7MvsAjdDS5JUGcp5Kbqw2VfWWzoU9JTeuKKBEBE67-tpubDEGquuorgFNbDrg8vepq1HnaV2mgQu9TcSBgBYfXw4AX8VMgkWqvkxHNuJmiah8iVnA3Hgj4cSvaGAXEnq814yC6hMEreckLsd7zyLL3o76",
+        "PP_PRIVATEPOND__WALLETS__1__WalletReplenishmentSource":  "2-of-tpubDFfb9gesTokwrY5UHgzMt5b4uf2v9SZc5eRuc6xG6SWHJBiFu8e3YpP3QfqPL54qpE7MvsAjdDS5JUGcp5Kbqw2VfWWzoU9JTeuKKBEBE67-tpubDEGquuorgFNbDrg8vepq1HnaV2mgQu9TcSBgBYfXw4AX8VMgkWqvkxHNuJmiah8iVnA3Hgj4cSvaGAXEnq814yC6hMEreckLsd7zyLL3o76",
+
+        "PP_PRIVATEPOND__WALLETS__2__DerivationScheme":  "2-of-tpubDFfb9gesTokwrY5UHgzMt5b4uf2v9SZc5eRuc6xG6SWHJBiFu8e3YpP3QfqPL54qpE7MvsAjdDS5JUGcp5Kbqw2VfWWzoU9JTeuKKBEBE67-tpubDEGquuorgFNbDrg8vepq1HnaV2mgQu9TcSBgBYfXw4AX8VMgkWqvkxHNuJmiah8iVnA3Hgj4cSvaGAXEnq814yC6hMEreckLsd7zyLL3o76",
+        "PP_PRIVATEPOND__WALLETS__2__AllowForDeposits":  "false",
+        "PP_PRIVATEPOND__WALLETS__2__RootedKeyPaths__0":  "dce20eff/m/48'/1'/0'/2'",
+        "PP_PRIVATEPOND__WALLETS__2__RootedKeyPaths__1":  "5c9e228d/m/48'/1'/0'/2'"
+        
       }
     }
   }

@@ -26,7 +26,8 @@ namespace PrivatePond.Data
         public string DerivationScheme { get; set; }
         //If this wallet can be suggested to users to do deposits
         public bool AllowForDeposits { get; set; }
-        public bool DefaultDeposit { get; set; }
+        //mandatory keypath needed to create PSBTs for transfers
+        public string[] RootedKeyPaths { get; set; }
         //the ideal maximum amount of funds 
         public decimal? MaximumFunds { get; set; }
         //the ideal minimum amount of funds 
@@ -40,4 +41,5 @@ namespace PrivatePond.Data
         //Transfers processed every x minutes
         public int BatchTransfersEvery { get; set; }
     }
+    
 }

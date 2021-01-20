@@ -36,7 +36,7 @@ namespace PrivatePond.Services.NBXplorer
                 var nbxOptions = provider.GetRequiredService<IOptions<NBXplorerOptions>>();
                 var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
                 var cookieFile = nbxOptions.Value.CookieFile;
-                if (cookieFile.Trim() == "0" || string.IsNullOrEmpty(cookieFile.Trim()))
+                if (string.IsNullOrEmpty(cookieFile?.Trim()) || cookieFile.Trim() == "0" )
                     cookieFile = null;
                 logger.LogInformation($"Explorer url is {(nbxOptions.Value.ExplorerUri.AbsoluteUri)}");
                 logger.LogInformation($"Cookie file is {(nbxOptions.Value.CookieFile ?? "not set")}");
@@ -46,9 +46,7 @@ namespace PrivatePond.Services.NBXplorer
                 {
                     logger.LogWarning($"{explorer.CryptoCode}: Not using cookie authentication");
                     explorer.SetNoAuth();
-                }
-
-                if (!explorer.SetCookieAuth(cookieFile))
+                }else if (!explorer.SetCookieAuth(cookieFile))
                 {
                     logger.LogWarning(
                         $"{explorer.CryptoCode}: Using cookie auth against NBXplorer, but {cookieFile} is not found");

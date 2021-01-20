@@ -1,9 +1,9 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 
 namespace PrivatePond.Controllers
 {
-    [ApiController]
     [Route("api/v1/users")]
     public class UsersController : ControllerBase
     {
@@ -22,10 +22,29 @@ namespace PrivatePond.Controllers
             return await _userService.CreateUser();
         }
 
-        [HttpGet("{userId}/deposit")]
-        public async Task<DepositRequestData> GetDepositRequest(string userId)
+        [HttpGet("")]
+        public async Task<ActionResult<List<UserData>>> List(int skip = 0, int take = int.MaxValue)
         {
-            return await _depositService.GetOrGenerateDepositRequest(userId);
+            return await _userService.GetUsers(skip, take);
+        }
+
+        [HttpPost("")]
+        [HttpGet("{userId}/deposit")]
+        public async Task<ActionResult<DepositRequestData>> GetDepositRequest(string userId)
+        {
+            var result = await _depositService.GetOrGenerateDepositRequest(userId);
+            if (result is null)
+            {
+                return NotFound();
+            }
+
+            return result;
+        }
+
+        [HttpGet("{userId}/deposit/history")]
+        public async Task<DepositRequestData> GetDepositRequestHistory(string userId)
+        {
+            return await _depositService.GetDepositRequestUserHistory(userId);
         }
     }
 }

@@ -2,7 +2,7 @@
 {
     public class WalletData
     {
-        public string DerivationScheme { get; set; }
-        public string Label { get; set; }
+        public bool Enabled { get; set; }
+        public decimal Balance { get; set; }
     }
 }

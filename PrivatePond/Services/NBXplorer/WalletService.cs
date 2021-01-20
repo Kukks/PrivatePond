@@ -32,6 +32,9 @@ namespace PrivatePond.Controllers
         private Dictionary<string, DerivationStrategyBase> Derivations =
             new();
 
+        private Dictionary<string, DerivationStrategyBase> WalletIdDerivations =
+            new();
+
         public WalletService(IOptions<PrivatePondOptions> options,
             IDbContextFactory<PrivatePondDbContext> dbContextFactory,
             ExplorerClient explorerClient,
@@ -55,23 +58,27 @@ namespace PrivatePond.Controllers
         public static string GetWalletId(DerivationStrategyBase derivationStrategy)
         {
             return derivationStrategy.ToString().GetHashCode().ToString();
-            ;
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            _fileSystemWatcher = new FileSystemWatcher()
+            if (!string.IsNullOrEmpty(_options.Value.KeysDir))
             {
-                Filter = "*.*",
-                NotifyFilter = NotifyFilters.LastWrite,
-                Path = _options.Value.KeysDir,
-                EnableRaisingEvents = true,
-                IncludeSubdirectories = false
-            };
-            _fileSystemWatcher.Changed += FileSystemWatcherOnChanged;
-            _fileSystemWatcher.Created += FileSystemWatcherOnChanged;
-            _fileSystemWatcher.Renamed += FileSystemWatcherOnChanged;
-            _fileSystemWatcher.Deleted += FileSystemWatcherOnChanged;
+
+                _fileSystemWatcher = new FileSystemWatcher()
+                {
+                    Filter = "*.*",
+                    NotifyFilter = NotifyFilters.LastWrite,
+                    Path = _options.Value.KeysDir,
+                    EnableRaisingEvents = true,
+                    IncludeSubdirectories = false
+                };
+                _fileSystemWatcher.Changed += FileSystemWatcherOnChanged;
+                _fileSystemWatcher.Created += FileSystemWatcherOnChanged;
+                _fileSystemWatcher.Renamed += FileSystemWatcherOnChanged;
+                _fileSystemWatcher.Deleted += FileSystemWatcherOnChanged;
+
+            }
 
             await using var dbContext = _dbContextFactory.CreateDbContext();
 
@@ -83,12 +90,13 @@ namespace PrivatePond.Controllers
                 _logger.LogInformation($"Loading wallet {walletOption.DerivationScheme}");
                 var derivationStrategy = GetDerivationStrategy(walletOption.DerivationScheme);
                 var walletId = GetWalletId(derivationStrategy);
+
+                WalletIdDerivations.TryAdd(walletId, derivationStrategy);
                 walletOption.WalletId = walletId;
                 loadedWallets.Add(walletId);
                 var wallet = await dbContext.Wallets.FindAsync(walletId);
                 await _explorerClient.TrackAsync(derivationStrategy, new TrackWalletRequest()
                 {
-                    
                 }, cancellationToken);
                 if (wallet is null)
                 {
@@ -102,6 +110,23 @@ namespace PrivatePond.Controllers
                 }
 
                 wallet.Enabled = true;
+                _logger.LogInformation($"Enabling wallet {wallet.Id}");
+            }
+
+            var depositRequestsToDeactivate = await dbContext.DepositRequests.Include(request => request.Wallet)
+                .Where(request => !request.Wallet.Enabled).ToListAsync(cancellationToken);
+
+            _logger.LogInformation(
+                $"Deactivating {depositRequestsToDeactivate.Count} deposit requests do the wallet being disabled.");
+            depositRequestsToDeactivate.ForEach(request => request.Active = false);
+
+            //if we have previous wallets, we want to make sure nbx is still tracking them in case of unusual behavior, such as a user paying to an old deposit request.
+            foreach (var s in depositRequestsToDeactivate.GroupBy(request => request.Wallet.DerivationStrategy)
+                .Select(requests => requests.Key))
+            {
+                var derivationStrategy = GetDerivationStrategy(s);
+                WalletIdDerivations.TryAdd(GetWalletId(derivationStrategy), derivationStrategy);
+                await _explorerClient.TrackAsync(derivationStrategy, new TrackWalletRequest(), cancellationToken);
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -118,6 +143,7 @@ namespace PrivatePond.Controllers
             {
                 return null;
             }
+
             var derivationStrategy = GetDerivationStrategy(walletOption.DerivationScheme);
             return await _explorerClient.GetUnusedAsync(derivationStrategy, DerivationFeature.Deposit, 0, true);
         }
@@ -151,55 +177,98 @@ namespace PrivatePond.Controllers
 
         public class WalletTransactionQuery
         {
+            public bool IncludeWallet { get; set; }
             public WalletTransaction.WalletTransactionStatus[] Statuses { get; set; }
+            public string[] Ids { get; set; }
             public string[] WalletIds { get; set; }
+            public int? Skip { get; set; }
+            public int? Take { get; set; }
         }
 
         public class DepositRequestQuery
         {
+            public bool? Active { get; set; }
             public bool IncludeWalletTransactions { get; set; }
             public string[] WalletIds { get; set; }
+            public string[] Ids { get; set; }
         }
 
-        public async Task<List<DepositRequest>> GetDepositRequests(DepositRequestQuery query)
+        public async Task<List<DepositRequest>> GetDepositRequests(DepositRequestQuery query,
+            CancellationToken cancellationToken)
         {
             await using var dbContext = _dbContextFactory.CreateDbContext();
-            
+
             var queryable = dbContext.DepositRequests.AsQueryable();
             if (query.IncludeWalletTransactions)
             {
                 queryable = queryable.Include(request => request.WalletTransactions);
             }
+
             if (query.WalletIds?.Any() is true)
             {
                 queryable = queryable.Where(transaction =>
                     query.WalletIds.Contains(transaction.WalletId));
             }
-            
-            return await queryable.ToListAsync();
+
+            if (query.Active.HasValue)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.Active == transaction.Active);
+            }
+
+            if (query.Ids?.Any() is true)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.Ids.Contains(transaction.Id));
+            }
+
+            return await queryable.ToListAsync(cancellationToken);
         }
-        
-        public async Task<List<WalletTransaction>> GetWalletTransactions(WalletTransactionQuery walletTransactionQuery)
+
+        public async Task<List<WalletTransaction>> GetWalletTransactions(WalletTransactionQuery query,
+            CancellationToken cancellationToken)
         {
             await WaitUntilWalletsLoaded();
-            
+
             await using var dbContext = _dbContextFactory.CreateDbContext();
 
             var queryable = dbContext.WalletTransactions.AsQueryable();
+            if (query.IncludeWallet)
+            {
+                queryable = queryable.Include(request => request.Wallet);
+            }
 
-            if (walletTransactionQuery.Statuses?.Any() is true)
+            if (query.Statuses?.Any() is true)
             {
                 queryable = queryable.Where(transaction =>
-                    walletTransactionQuery.Statuses.Contains(transaction.Status));
+                    query.Statuses.Contains(transaction.Status));
             }
-            if (walletTransactionQuery.WalletIds?.Any() is true)
+
+            if (query.Ids?.Any() is true)
             {
                 queryable = queryable.Where(transaction =>
-                    walletTransactionQuery.WalletIds.Contains(transaction.WalletId));
+                    query.Ids.Contains(transaction.Id));
             }
-            return await queryable.ToListAsync();
+
+            if (query.WalletIds?.Any() is true)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.WalletIds.Contains(transaction.WalletId));
+            }
+
+            if (query.Skip.HasValue)
+            {
+                queryable = queryable.Skip(query.Skip.Value);
+            }
+
+            if (query.Take.HasValue)
+            {
+                queryable = queryable.Take(query.Take.Value);
+            }
+
+            return await queryable.ToListAsync(cancellationToken);
         }
-        
+
         private async Task<ExtKey> LoadKey(ExtPubKey extPubKey)
         {
             ExtKey key = null;
@@ -265,7 +334,7 @@ namespace PrivatePond.Controllers
             _fileSystemWatcher.Renamed -= FileSystemWatcherOnChanged;
             _fileSystemWatcher.Deleted -= FileSystemWatcherOnChanged;
 
-            _fileSystemWatcher.Dispose();
+            _fileSystemWatcher?.Dispose();
             return Task.CompletedTask;
         }
 
@@ -275,7 +344,7 @@ namespace PrivatePond.Controllers
             HotWallet.Clear();
         }
 
-        private DerivationStrategyBase GetDerivationStrategy(string derivationScheme)
+        public DerivationStrategyBase GetDerivationStrategy(string derivationScheme)
         {
             if (Derivations.TryGetValue(derivationScheme, out var derivScheme))
             {
@@ -287,11 +356,74 @@ namespace PrivatePond.Controllers
             return derivationStrategy;
         }
 
-        public async Task UpdateWalletTransactions(List<WalletTransaction> updated)
+        public async Task<DerivationStrategyBase> GetDerivationsByWalletId(string walletId)
+        {
+            if (WalletIdDerivations.TryGetValue(walletId, out var derivScheme))
+            {
+                return derivScheme;
+            }
+
+            await using var dbContext = _dbContextFactory.CreateDbContext();
+            var match = await dbContext.Wallets.FindAsync(walletId);
+            if (match is null)
+            {
+                return null;
+            }
+
+            var result = GetDerivationStrategy(match.DerivationStrategy);
+            WalletIdDerivations.Add(walletId, result);
+            return result;
+        }
+
+        public async Task Update(UpdateContext context, CancellationToken cancellationToken)
+        {
+            _logger.LogInformation(
+                $"Adding {context.AddedWalletTransactions} wallet txs, updating {context.UpdatedWalletTransactions} wallet txs and {context.UpdatedDepositRequests} deposit requests");
+            await using var dbContext = _dbContextFactory.CreateDbContext();
+            dbContext.UpdateRange(context.UpdatedWalletTransactions);
+            dbContext.UpdateRange(context.UpdatedDepositRequests);
+            await dbContext.AddRangeAsync(context.AddedWalletTransactions, cancellationToken);
+            var walletTransactionsConfirmed = context.AddedWalletTransactions.Concat(context.UpdatedWalletTransactions)
+                .Where(transaction => transaction.Status == WalletTransaction.WalletTransactionStatus.Confirmed)
+                .ToList();
+            if (walletTransactionsConfirmed.Any())
+                await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        public class UpdateContext
+        {
+            public List<WalletTransaction> AddedWalletTransactions = new List<WalletTransaction>();
+            public List<WalletTransaction> UpdatedWalletTransactions = new List<WalletTransaction>();
+            public List<DepositRequest> UpdatedDepositRequests = new List<DepositRequest>();
+        }
+
+        public async Task<IEnumerable<WalletData>> GetWallets(WalletQuery query)
         {
             await using var dbContext = _dbContextFactory.CreateDbContext();
-            dbContext.AttachRange(updated);
-            await dbContext.SaveChangesAsync();
+            var queryable = dbContext.Wallets.AsQueryable();
+            if (query.Ids?.Any() is true)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.Ids.Contains(transaction.Id));
+            }
+
+            return await Task.WhenAll(queryable.Select(wallet => FromDBModel(wallet)));
         }
+
+        public async Task<WalletData> FromDBModel(Wallet wallet)
+        {
+            var derivation = await GetDerivationsByWalletId(wallet.Id);
+            var balance = await _explorerClient.GetBalanceAsync(derivation);
+            return new WalletData()
+            {
+                Balance = ((Money) balance.Confirmed).ToDecimal(MoneyUnit.BTC),
+                Enabled = wallet.Enabled
+            };
+        }
+    }
+
+    public class WalletQuery
+    {
+        public string[] Ids { get; set; }
     }
 }

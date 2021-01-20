@@ -26,6 +26,7 @@ namespace PrivatePond
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddNBXPlorerIntegration(Configuration);
+            services.AddHttpClient();
             services.AddSingleton<DepositService>();
             services.AddSingleton<UserService>();
             services.AddDataProtection(options => options.ApplicationDiscriminator = "PrivatePond");
@@ -37,12 +38,12 @@ namespace PrivatePond
                         optionsWallet.WalletId = null;
                     }
                 });
-            services.AddDbContext<PrivatePondDbContext>(builder =>
-                builder.UseNpgsql(
-                    Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName)));
+            // services.AddDbContext<PrivatePondDbContext>(builder =>
+            //     builder.UseNpgsql(
+            //         Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName)), ServiceLifetime.Singleton);
             services.AddDbContextFactory<PrivatePondDbContext>(builder =>
                 builder.UseNpgsql(
-                    Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName)));
+                    Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName)??"fake"), ServiceLifetime.Singleton);
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {

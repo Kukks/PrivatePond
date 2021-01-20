@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using PrivatePond.Data;
@@ -28,6 +31,12 @@ namespace PrivatePond.Controllers
             await using var dbContext = _dbContextFactory.CreateDbContext();
             var user = await dbContext.Users.FindAsync(id);
             return user is not null ? FromDbModel(user) : null;
+        }
+
+        public async Task<List<UserData>> GetUsers(int skip = 0, int take = int.MaxValue)
+        {
+            await using var dbContext = _dbContextFactory.CreateDbContext();
+            return await dbContext.Users.Skip(skip).Take(take).Select(user1 => FromDbModel(user1)).ToListAsync();
         }
 
         private UserData FromDbModel(User user)

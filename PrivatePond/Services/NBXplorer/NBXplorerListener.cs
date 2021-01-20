@@ -45,12 +45,14 @@ namespace PrivatePond.Services.NBXplorer
             {
                 try
                 {
+                    _logger.LogInformation("Waiting for NBX to be ready");
                     await _explorerClient.WaitServerStartedAsync(cancellationToken);
                     await using var notificationSession =
                         await _explorerClient.CreateWebsocketNotificationSessionAsync(cancellationToken);
                     await notificationSession.ListenNewBlockAsync(cancellationToken);
                     await notificationSession.ListenAllTrackedSourceAsync(false, cancellationToken);
-
+                    await CheckForMissingTxs(_options.Value.Wallets.Select(option => option.WalletId).ToArray(),
+                        cancellationToken);
                     while (!cancellationToken.IsCancellationRequested)
                     {
                         var evt = await notificationSession.NextEventAsync(cancellationToken);
@@ -63,13 +65,69 @@ namespace PrivatePond.Services.NBXplorer
                                 if (txEvent.DerivationStrategy is not null)
                                 {
                                     var walletId = WalletService.GetWalletId(txEvent.DerivationStrategy);
-                                    foreach (var matchedOutput in txEvent.Outputs)
+
+                                    var depositIdToOutput =
+                                        txEvent.Outputs.ToDictionary(output => output.ScriptPubKey.Hash.ToString());
+
+                                    var matchedDepositRequests = await _walletService.GetDepositRequests(
+                                        new WalletService.DepositRequestQuery()
+                                        {
+                                            IncludeWalletTransactions = true,
+                                            Ids = depositIdToOutput.Keys.ToArray(),
+                                            WalletIds = new []{walletId}
+                                        }, cancellationToken);
+                                    var updatedDepositRequests = new List<DepositRequest>();
+                                    var updatedWalletTransactions = new List<WalletTransaction>();
+                                    var newWalletTransactions = new List<WalletTransaction>();
+                                    foreach (var depositRequest in matchedDepositRequests)
                                     {
-                                        //check if already recorded  
-                                        _walletService.GetWalletTransactions(new WalletService.WalletTransactionQuery())
+                                        
+                                        var matchedOutput = depositIdToOutput[depositRequest.Id];
+                                        depositIdToOutput.Remove(depositRequest.Id);
+                                        UpdateDepositRequest(depositRequest, updatedDepositRequests, matchedOutput, txEvent.TransactionData, updatedWalletTransactions, walletId, newWalletTransactions);
                                     }
+
+                                    //whatever is left in depositIdToOutput, is not a deposit request but some external transfer. We should log it 
+                                    var unmatchedWalletTransactions = await _walletService.GetWalletTransactions(
+                                        new WalletService.WalletTransactionQuery()
+                                        {
+                                            WalletIds = new[] {walletId},
+                                            Ids = depositIdToOutput.Keys.ToArray()
+                                        }, cancellationToken);
+                                    foreach (var unmatchedWalletTransaction in unmatchedWalletTransactions)
+                                    {
+                                        depositIdToOutput.Remove(unmatchedWalletTransaction.Id);
+                                        if (UpdateWalletTransactionFromTransactionResult(unmatchedWalletTransaction,
+                                            txEvent.TransactionData))
+                                        {
+                                            updatedWalletTransactions.Add(unmatchedWalletTransaction);
+                                        }
+                                    }
+                                    foreach (var keyValuePair in depositIdToOutput)
+                                    {
+                                        var outpoint = new OutPoint(txEvent.TransactionData.TransactionHash,
+                                            keyValuePair.Value.Index);
+                                        var newWalletTransaction =  new WalletTransaction()
+                                        {
+                                            OutPoint = outpoint,
+                                            Amount = (keyValuePair.Value.Value as Money).ToDecimal(MoneyUnit.BTC),
+                                            WalletId = walletId,
+                                            DepositRequestId = null
+                                        };
+                                        UpdateWalletTransactionFromTransactionResult(newWalletTransaction,
+                                            txEvent.TransactionData);
+                                        newWalletTransactions.Add(newWalletTransaction);
+                                    }
+
+                                    await _walletService.Update(new WalletService.UpdateContext()
+                                    {
+                                        AddedWalletTransactions = newWalletTransactions,
+                                        UpdatedDepositRequests = updatedDepositRequests,
+                                        UpdatedWalletTransactions = updatedWalletTransactions
+                                    }, cancellationToken);
                                 }
-                                
+
+                                break;
                             case UnknownEvent unknownEvent:
                                 _logger.LogWarning(
                                     $"Received unknown message from NBXplorer ({unknownEvent.CryptoCode}), ID: {unknownEvent.EventId}");
@@ -88,8 +146,50 @@ namespace PrivatePond.Services.NBXplorer
             }
         }
 
+        private void UpdateDepositRequest(DepositRequest depositRequest, List<DepositRequest> updatedDepositRequests, MatchedOutput matchedOutput,
+            TransactionResult transactionResult, List<WalletTransaction> updatedWalletTransactions, string walletId, List<WalletTransaction> newWalletTransactions)
+        {
+            var wasActive = depositRequest.Active;
+            if (wasActive)
+            {
+                depositRequest.Active = false;
+                updatedDepositRequests.Add(depositRequest);
+            }
+
+            var outpoint = new OutPoint(transactionResult.TransactionHash,
+                matchedOutput.Index);
+            depositRequest.Active = false;
+            var matchedWalletTransaction =
+                depositRequest.WalletTransactions.SingleOrDefault(transaction =>
+                    transaction.OutPoint == outpoint);
+            if (matchedWalletTransaction != null)
+            {
+                //this tx was already registered
+                if (UpdateWalletTransactionFromTransactionResult(matchedWalletTransaction,
+                    transactionResult))
+                {
+                    updatedWalletTransactions.Add(matchedWalletTransaction);
+                }
+            }
+            else
+            {
+                var newWalletTransaction = new WalletTransaction()
+                {
+                    OutPoint = outpoint,
+                    Amount = (matchedOutput.Value as Money).ToDecimal(MoneyUnit.BTC),
+                    WalletId = walletId,
+                    DepositRequestId = depositRequest.Id,
+                    InactiveDepositRequest = !wasActive
+                };
+                UpdateWalletTransactionFromTransactionResult(newWalletTransaction,
+                    transactionResult);
+                newWalletTransactions.Add(newWalletTransaction);
+            }
+        }
+
         private async Task UpdateSummaryContinuously(CancellationToken cancellationToken)
         {
+            
             while (!cancellationToken.IsCancellationRequested)
             {
                 await _nbXplorerSummaryProvider.UpdateClientState(cancellationToken);
@@ -99,35 +199,127 @@ namespace PrivatePond.Services.NBXplorer
             }
         }
 
-        public async Task CheckPendingTransactions(CancellationToken cancellationToken)
+        private async Task CheckForMissingTxs(string[] walletIds, CancellationToken cancellationToken)
         {
+            var ctx = new WalletService.UpdateContext();
+            foreach (var walletId in walletIds)
+            {
+                var derivation = await _walletService.GetDerivationsByWalletId(walletId);
+                if (derivation is null)
+                {
+                    continue;
+                }
+                var utxos = (await _explorerClient.GetUTXOsAsync(derivation, cancellationToken));
+                var utxoDict = utxos.Confirmed.UTXOs.Concat(utxos.Unconfirmed.UTXOs)
+                    .ToDictionary(utxo => utxo.Outpoint.ToString());
+                var walletTransactions = await _walletService.GetWalletTransactions(new WalletService.WalletTransactionQuery()
+                {
+                    Ids = utxoDict.Keys.ToArray()
+                }, cancellationToken);
+                var missingTxs = utxoDict.Where(pair => walletTransactions.All(transaction => transaction.Id != pair.Key));
+                var potentialDepositRequestIds = missingTxs.Select(pair => pair.Value.ScriptPubKey.Hash.ToString());
+                var matchedDepositRequests = (await _walletService.GetDepositRequests(
+                    new WalletService.DepositRequestQuery()
+                    {
+                        Ids = potentialDepositRequestIds.ToArray()
+                    }, cancellationToken)).ToDictionary(request => request.Id);
+                foreach (var keyValuePair in missingTxs)
+                {
+                    var tx = await
+                        _explorerClient.GetTransactionAsync(keyValuePair.Value.TransactionHash, cancellationToken);
+                    var depositRequestId = keyValuePair.Value.ScriptPubKey.Hash.ToString();
+                    if (matchedDepositRequests.TryGetValue(depositRequestId, out var depositRequest))
+                    {
+                        UpdateDepositRequest(depositRequest, ctx.UpdatedDepositRequests, new MatchedOutput()
+                        {
+                            Index =  keyValuePair.Value.Index,
+                            Value = keyValuePair.Value.Value,
+                            KeyPath = keyValuePair.Value.KeyPath,
+                            ScriptPubKey = keyValuePair.Value.ScriptPubKey
+                        },tx,ctx.UpdatedWalletTransactions, walletId, ctx.AddedWalletTransactions );
+                    }
+                    else
+                    {
+                        var newWalletTransaction = new WalletTransaction()
+                        {
+                            OutPoint = keyValuePair.Value.Outpoint,
+                            Amount = ((Money) keyValuePair.Value.Value).ToDecimal(MoneyUnit.BTC),
+                            WalletId = walletId,
+                            DepositRequestId = null,
+                            InactiveDepositRequest = false
+                        };
+                        UpdateWalletTransactionFromTransactionResult(newWalletTransaction,tx);
+                        ctx.AddedWalletTransactions.Add(newWalletTransaction);
+                    }
+                }
+            }
+            await _walletService.Update(ctx, cancellationToken);
+        }
+
+
+        private async Task CheckPendingTransactions(CancellationToken cancellationToken)
+        {
+            _logger.LogInformation("Updating pending transactions");
+           //refactor and use wallet get tx from start
             var walletTransactions = await _walletService.GetWalletTransactions(new WalletService.WalletTransactionQuery()
             {
+                IncludeWallet = true,
                 Statuses = new [] {WalletTransaction.WalletTransactionStatus.AwaitingConfirmation}
-            });
-            var txIds = walletTransactions.Select(transaction => uint256.Parse(transaction.TransactionId)).ToHashSet();
-            var txFetchTasks = txIds.ToDictionary(s => s.ToString(), s => _explorerClient.GetTransactionAsync(s, cancellationToken));
+            }, cancellationToken);
+            var txIds = walletTransactions.Select(transaction => transaction.OutPoint.Hash).ToHashSet();
+            var txFetchTasks = txIds.ToDictionary(s => s, s => _explorerClient.GetTransactionAsync(s, cancellationToken));
             await Task.WhenAll(txFetchTasks.Values);
             var updated = new List<WalletTransaction>();
-            foreach (var walletTransaction in walletTransactions)
+            
+            foreach (var walletTransactionGroup in walletTransactions.GroupBy(transaction => transaction.OutPoint.Hash))
             {
-                var txResult = await txFetchTasks[walletTransaction.TransactionId];
-                var hash = walletTransaction.GetHashCode();
-                walletTransaction.Confirmations = txResult.Confirmations;
-                walletTransaction.BlockHash = txResult.BlockId?.ToString();
-                walletTransaction.Timestamp = txResult.Timestamp;
-                walletTransaction.BlockHeight = txResult.Height;
-                walletTransaction.Status = walletTransaction.Confirmations >= _options.Value.MinimumConfirmations
-                    ? WalletTransaction.WalletTransactionStatus.Confirmed
-                    : WalletTransaction.WalletTransactionStatus.AwaitingConfirmation;
-                if (hash != walletTransaction.GetHashCode())
+                var txResult = await txFetchTasks[walletTransactionGroup.Key];
+                foreach (var walletTransaction in walletTransactionGroup)
                 {
-                    updated.Add(walletTransaction);
+                    if (UpdateWalletTransactionFromTransactionResult(walletTransaction, txResult))
+                    {
+                        updated.Add(walletTransaction);
+                    }
                 }
             }
 
-            await _walletService.UpdateWalletTransactions(updated);
+            var notUpdated0ConfirmationTransactions = walletTransactions.Where(transaction =>
+                transaction.Confirmations <= 0 && !updated.Contains(transaction)).GroupBy(transaction => transaction.WalletId).ToList();
+            if (notUpdated0ConfirmationTransactions.Any())
+            {
+                foreach (var notUpdated0ConfirmationTransactionGroup in notUpdated0ConfirmationTransactions)
+                {
+                    var wallet = notUpdated0ConfirmationTransactionGroup.First().Wallet.DerivationStrategy;
+                    var deriv = _walletService.GetDerivationStrategy(wallet);
+                    var txs = await _explorerClient.GetTransactionsAsync(deriv, cancellationToken);
+                    var replacedWalletTransactions = notUpdated0ConfirmationTransactionGroup.Where(transaction =>
+                        txs.ReplacedTransactions.Transactions.Any(information =>
+                            information.TransactionId == transaction.OutPoint.Hash));
+                    foreach (var replacedWalletTransaction in replacedWalletTransactions)
+                    {
+                        replacedWalletTransaction.Status = WalletTransaction.WalletTransactionStatus.Replaced;
+                        updated.Add(replacedWalletTransaction);
+                    }
+                }
+            }
 
+            await _walletService.Update(new WalletService.UpdateContext(){ UpdatedWalletTransactions = updated}, cancellationToken);
+        }
+
+        private bool UpdateWalletTransactionFromTransactionResult(WalletTransaction walletTransaction,
+            TransactionResult transactionResult)
+        {
+            var hash = walletTransaction.GetHashCode();
+            walletTransaction.Confirmations = transactionResult.Confirmations;
+            walletTransaction.BlockHash = transactionResult.BlockId?.ToString();
+            walletTransaction.Timestamp = transactionResult.Timestamp;
+            walletTransaction.BlockHeight = transactionResult.Height;
+            walletTransaction.Status = walletTransaction.Confirmations >= _options.Value.MinimumConfirmations
+                ? walletTransaction.InactiveDepositRequest ? WalletTransaction.WalletTransactionStatus.RequiresApproval :
+                WalletTransaction.WalletTransactionStatus.Confirmed
+                : WalletTransaction.WalletTransactionStatus.AwaitingConfirmation;
+
+            return hash == walletTransaction.GetHashCode();
         }
         
         public Task StopAsync(CancellationToken cancellationToken)

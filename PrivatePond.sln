@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivatePond", "PrivatePond\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivatePond.Tests", "PrivatePond.Tests\PrivatePond.Tests.csproj", "{2ACE3219-50DF-48CB-A991-D683416ED2A2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivatePondWalletHelper", "PrivatePondWalletHelper\PrivatePondWalletHelper.csproj", "{992E5F6B-47DA-49A4-8E17-F67F046CFD9C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{2ACE3219-50DF-48CB-A991-D683416ED2A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2ACE3219-50DF-48CB-A991-D683416ED2A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2ACE3219-50DF-48CB-A991-D683416ED2A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{992E5F6B-47DA-49A4-8E17-F67F046CFD9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{992E5F6B-47DA-49A4-8E17-F67F046CFD9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{992E5F6B-47DA-49A4-8E17-F67F046CFD9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{992E5F6B-47DA-49A4-8E17-F67F046CFD9C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

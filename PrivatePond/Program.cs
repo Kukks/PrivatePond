@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace PrivatePond
 {
@@ -18,6 +19,11 @@ namespace PrivatePond
         private static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
                 .ConfigureAppConfiguration(builder => builder.AddEnvironmentVariables("PP_"))
+                .ConfigureLogging(l =>
+                {
+                    l.AddFilter("Microsoft", LogLevel.Error);
+                    l.AddFilter("System.Net.Http.HttpClient", LogLevel.Critical);
+                })
                 .ConfigureWebHostDefaults(webBuilder => { webBuilder.UseStartup<Startup>(); });
     }
 }

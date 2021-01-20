@@ -5,7 +5,7 @@ namespace PrivatePond.Controllers
 {
     public class DepositRequestData
     {
-        public List<DepositRequestDataItem> Items { get; set; }
+        public List<DepositRequestDataItem> Items { get; set; } = new List<DepositRequestDataItem>();
 
         public class DepositRequestDataItem
         {
@@ -13,7 +13,8 @@ namespace PrivatePond.Controllers
             public string Destination { get; set; }
             public string PaymentLink { get; set; }
 
-            public List<DepositRequestDataItemPaymentItem> History { get; set; }
+            public List<DepositRequestDataItemPaymentItem> History { get; set; } =
+                new List<DepositRequestDataItemPaymentItem>();
         }
 
         public class DepositRequestDataItemPaymentItem

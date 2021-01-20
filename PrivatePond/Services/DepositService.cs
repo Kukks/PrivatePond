@@ -32,7 +32,7 @@ namespace PrivatePond.Controllers
             var existingActive = await dbContext.DepositRequests.Where(request =>
                 request.UserId == userId && request.Active).ToListAsync();
 
-            var walletsToRequestDepositDetails = _options.Value.Wallets.Where(option => option.DefaultDeposit &&
+            var walletsToRequestDepositDetails = _options.Value.Wallets.Where(option => option.AllowForDeposits &&
                 !existingActive.Exists(request => request.WalletId == option.WalletId)).ToList();
             result.Items.AddRange(existingActive.Select(FromDbModel));
             foreach (var walletToRequestDepositDetail in walletsToRequestDepositDetails)
@@ -45,6 +45,7 @@ namespace PrivatePond.Controllers
 
                 var dr = new DepositRequest()
                 {
+                    Id = kpi.ScriptPubKey.Hash.ToString(),
                     UserId = userId,
                     Active = true,
                     WalletTransactions = new List<WalletTransaction>(),
@@ -86,8 +87,8 @@ namespace PrivatePond.Controllers
 
             return new DepositRequestData
             {
-                Items = await dbContext.DepositRequests.Where(request =>
-                    request.UserId == userId && !request.Active).Select(request => FromDbModel(request)).ToListAsync()
+                Items = (await dbContext.DepositRequests.Where(request =>
+                    request.UserId == userId && !request.Active).ToListAsync()).Select(request => FromDbModel(request)).ToList()
             };
         }
     }

@@ -10,13 +10,11 @@ namespace PrivatePond.Controllers
     [Route("api/v1/wallets")]
     public class WalletsController : ControllerBase
     {
-        private readonly UserService _userService;
         private readonly DepositService _depositService;
         private readonly WalletService _walletService;
 
-        public WalletsController(UserService userService, DepositService depositService, WalletService walletService)
+        public WalletsController(DepositService depositService, WalletService walletService)
         {
-            _userService = userService;
             _depositService = depositService;
             _walletService = walletService;
         }

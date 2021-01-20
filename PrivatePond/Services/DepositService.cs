@@ -13,16 +13,14 @@ namespace PrivatePond.Controllers
         private readonly IOptions<PrivatePondOptions> _options;
         private readonly IDbContextFactory<PrivatePondDbContext> _dbContextFactory;
         private readonly WalletService _walletService;
-        private readonly UserService _userService;
 
         public DepositService(IOptions<PrivatePondOptions> options,
             IDbContextFactory<PrivatePondDbContext> dbContextFactory,
-            WalletService walletService, UserService userService)
+            WalletService walletService)
         {
             _options = options;
             _dbContextFactory = dbContextFactory;
             _walletService = walletService;
-            _userService = userService;
         }
 
         public async Task<DepositRequestData> GetOrGenerateDepositRequest(string userId)
@@ -36,13 +34,6 @@ namespace PrivatePond.Controllers
 
             var walletsToRequestDepositDetails = _options.Value.Wallets.Where(option => option.DefaultDeposit &&
                 !existingActive.Exists(request => request.WalletId == option.WalletId)).ToList();
-            if (walletsToRequestDepositDetails.Any())
-            {
-                if ((await _userService.FindUser(userId)) is null)
-                {
-                    return null;
-                }
-            }
             result.Items.AddRange(existingActive.Select(FromDbModel));
             foreach (var walletToRequestDepositDetail in walletsToRequestDepositDetails)
             {

@@ -399,7 +399,7 @@ namespace PrivatePond.Controllers
             var walletTransactionsConfirmed = context.AddedWalletTransactions.Concat(context.UpdatedWalletTransactions)
                 .Where(transaction => transaction.Status == WalletTransaction.WalletTransactionStatus.Confirmed)
                 .ToList();
-            if (walletTransactionsConfirmed.Any())
+            
                 await dbContext.SaveChangesAsync(cancellationToken);
         }
 

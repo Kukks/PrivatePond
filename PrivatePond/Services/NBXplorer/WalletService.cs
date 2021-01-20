@@ -204,6 +204,7 @@ namespace PrivatePond.Controllers
             public bool IncludeWalletTransactions { get; set; }
             public string[] WalletIds { get; set; }
             public string[] Ids { get; set; }
+            public string[] UserIds { get; set; }
         }
 
         public async Task<List<DepositRequest>> GetDepositRequests(DepositRequestQuery query,
@@ -233,6 +234,11 @@ namespace PrivatePond.Controllers
             {
                 queryable = queryable.Where(transaction =>
                     query.Ids.Contains(transaction.Id));
+            }
+            if (query.UserIds?.Any() is true)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.UserIds.Contains(transaction.UserId));
             }
 
             return await queryable.ToListAsync(cancellationToken);

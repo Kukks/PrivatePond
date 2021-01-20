@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -85,10 +86,15 @@ namespace PrivatePond.Controllers
             await _walletService.WaitUntilWalletsLoaded();
             await using var dbContext = _dbContextFactory.CreateDbContext();
 
+            
             return new DepositRequestData
             {
-                Items = (await dbContext.DepositRequests.Where(request =>
-                    request.UserId == userId && !request.Active).ToListAsync()).Select(request => FromDbModel(request)).ToList()
+                Items = (await _walletService.GetDepositRequests(new WalletService.DepositRequestQuery()
+                {
+                    Active = false,
+                    UserIds = new[] {userId},
+                    IncludeWalletTransactions = true,
+                }, CancellationToken.None)).Select(request => FromDbModel(request)).ToList()
             };
         }
     }

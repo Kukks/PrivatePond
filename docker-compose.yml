@@ -1,13 +1,13 @@
-version: 3
+version: "3"
 services:
   postgres:
     image: postgres:13.1
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
-      volumes:
+    volumes:
         - "postgres_datadir:/var/lib/postgresql/data"
     ports:
-      - "65432:5432"
+      - "65466:5432"
     expose:
       - "5432"
 
@@ -15,17 +15,17 @@ services:
     image: nicolasdorier/nbxplorer:2.1.47
     restart: unless-stopped
     ports:
-      - "65433:65433"
+      - "65467:65467"
     expose:
-      - "65433"
+      - "65467"
     environment:
       NBXPLORER_NETWORK: regtest
       NBXPLORER_CHAINS: "btc"
-      NBXPLORER_BTCRPCURL: http://bitcoind:65434/
-      NBXPLORER_BTCNODEENDPOINT: bitcoind:65435
+      NBXPLORER_BTCRPCURL: http://bitcoind:65468/
+      NBXPLORER_BTCNODEENDPOINT: bitcoind:65469
       NBXPLORER_BTCRPCUSER: ceiwHEbqWI83
       NBXPLORER_BTCRPCPASSWORD: DwubwWsoo3
-      NBXPLORER_BIND: 0.0.0.0:65433
+      NBXPLORER_BIND: 0.0.0.0:65467
       NBXPLORER_MINGAPSIZE: 5
       NBXPLORER_MAXGAPSIZE: 10
       NBXPLORER_VERBOSE: 1
@@ -44,25 +44,25 @@ services:
         rpcuser=ceiwHEbqWI83
         rpcpassword=DwubwWsoo3
         rpcport=43782
-        rpcbind=0.0.0.0:65434
-        port=65435
+        rpcbind=0.0.0.0:65468
+        port=65469
         whitelist=0.0.0.0/0
         zmqpubrawblock=tcp://0.0.0.0:65436
         zmqpubrawtx=tcp://0.0.0.0:65437
         deprecatedrpc=signrawtransaction
         fallbackfee=0.0002
     ports:
-      - "65434:65434"
-      - "39388:39388"
+      - "65468:65468"
+      - "65469:65469"
     expose:
-      - "65434" # RPC
-      - "65435" # P2P
+      - "65468" # RPC
+      - "65469" # P2P
       - "65436" # ZMQ
       - "65437" # ZMQ
     volumes:
       - "bitcoin_datadir:/data"
 
-  volumes:
-    postgres_datadir:
-    bitcoin_datadir:
-    nbxplorer_datadir:  
+volumes:
+  postgres_datadir:
+  bitcoin_datadir:
+  nbxplorer_datadir:  

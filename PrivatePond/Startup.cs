@@ -2,6 +2,8 @@ using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,22 +30,22 @@ namespace PrivatePond
             services.AddNBXPlorerIntegration(Configuration);
             services.AddHttpClient();
             services.AddSingleton<DepositService>();
-            services.AddSingleton<UserService>();
             services.AddDataProtection(options => options.ApplicationDiscriminator = "PrivatePond");
-            services.AddOptions<PrivatePondOptions>().Bind(Configuration.GetSection(PrivatePondOptions.OptionsConfigSection)).PostConfigure(
-                options =>
-                {
-                    foreach (var optionsWallet in options.Wallets)
+            services.AddOptions<PrivatePondOptions>()
+                .Bind(Configuration.GetSection(PrivatePondOptions.OptionsConfigSection)).PostConfigure(
+                    options =>
                     {
-                        optionsWallet.WalletId = null;
-                    }
-                });
-            // services.AddDbContext<PrivatePondDbContext>(builder =>
-            //     builder.UseNpgsql(
-            //         Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName)), ServiceLifetime.Singleton);
+                        foreach (var optionsWallet in options.Wallets)
+                        {
+                            optionsWallet.WalletId = null;
+                        }
+                    });
             services.AddDbContextFactory<PrivatePondDbContext>(builder =>
-                builder.UseNpgsql(
-                    Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName)??"fake"), ServiceLifetime.Singleton);
+            {
+                var connString = Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName);
+                builder.UseNpgsql(connString, optionsBuilder => { optionsBuilder.EnableRetryOnFailure(10); });
+            }, ServiceLifetime.Singleton);
+            services.AddSingleton<IStartupTask, MigrationStartupTask>();
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {
@@ -52,10 +54,8 @@ namespace PrivatePond
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, PrivatePondDbContext privatePondDbContext )
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            privatePondDbContext.Database.Migrate();
-            
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();

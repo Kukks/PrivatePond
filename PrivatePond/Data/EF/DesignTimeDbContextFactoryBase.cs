@@ -9,6 +9,7 @@ namespace PrivatePond.Data.EF
     public abstract class DesignTimeDbContextFactoryBase<TContext> :
         IDesignTimeDbContextFactory<TContext> where TContext : DbContext
     {
+        public abstract string DefaultConnectionStringName { get; }
         public TContext CreateDbContext(string[] args)
         {
             return Create(
@@ -40,7 +41,7 @@ namespace PrivatePond.Data.EF
 
             var config = builder.Build();
 
-            var connstr = config.GetConnectionString("default");
+            var connstr = config.GetConnectionString(DefaultConnectionStringName);
 
             if (String.IsNullOrWhiteSpace(connstr) == true)
             {

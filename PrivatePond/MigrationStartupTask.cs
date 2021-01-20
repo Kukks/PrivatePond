@@ -29,7 +29,8 @@ namespace PrivatePond
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "Could not migrate database to latest version");
+                _logger.LogError(e, "Error on the MigrationStartupTask");
+                throw;
             }
         }
     }

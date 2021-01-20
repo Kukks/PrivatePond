@@ -53,6 +53,7 @@ namespace PrivatePond.Services.NBXplorer
                     await notificationSession.ListenAllTrackedSourceAsync(false, cancellationToken);
                     await CheckForMissingTxs(_options.Value.Wallets.Select(option => option.WalletId).ToArray(),
                         cancellationToken);
+                    await CheckPendingTransactions(cancellationToken);
                     while (!cancellationToken.IsCancellationRequested)
                     {
                         var evt = await notificationSession.NextEventAsync(cancellationToken);
@@ -74,17 +75,18 @@ namespace PrivatePond.Services.NBXplorer
                                         {
                                             IncludeWalletTransactions = true,
                                             Ids = depositIdToOutput.Keys.ToArray(),
-                                            WalletIds = new []{walletId}
+                                            WalletIds = new[] {walletId}
                                         }, cancellationToken);
                                     var updatedDepositRequests = new List<DepositRequest>();
                                     var updatedWalletTransactions = new List<WalletTransaction>();
                                     var newWalletTransactions = new List<WalletTransaction>();
                                     foreach (var depositRequest in matchedDepositRequests)
                                     {
-                                        
                                         var matchedOutput = depositIdToOutput[depositRequest.Id];
                                         depositIdToOutput.Remove(depositRequest.Id);
-                                        UpdateDepositRequest(depositRequest, updatedDepositRequests, matchedOutput, txEvent.TransactionData, updatedWalletTransactions, walletId, newWalletTransactions);
+                                        UpdateDepositRequest(depositRequest, updatedDepositRequests, matchedOutput,
+                                            txEvent.TransactionData, updatedWalletTransactions, walletId,
+                                            newWalletTransactions);
                                     }
 
                                     //whatever is left in depositIdToOutput, is not a deposit request but some external transfer. We should log it 
@@ -103,11 +105,12 @@ namespace PrivatePond.Services.NBXplorer
                                             updatedWalletTransactions.Add(unmatchedWalletTransaction);
                                         }
                                     }
+
                                     foreach (var keyValuePair in depositIdToOutput)
                                     {
                                         var outpoint = new OutPoint(txEvent.TransactionData.TransactionHash,
                                             keyValuePair.Value.Index);
-                                        var newWalletTransaction =  new WalletTransaction()
+                                        var newWalletTransaction = new WalletTransaction()
                                         {
                                             OutPoint = outpoint,
                                             Amount = (keyValuePair.Value.Value as Money).ToDecimal(MoneyUnit.BTC),
@@ -146,8 +149,10 @@ namespace PrivatePond.Services.NBXplorer
             }
         }
 
-        private void UpdateDepositRequest(DepositRequest depositRequest, List<DepositRequest> updatedDepositRequests, MatchedOutput matchedOutput,
-            TransactionResult transactionResult, List<WalletTransaction> updatedWalletTransactions, string walletId, List<WalletTransaction> newWalletTransactions)
+        private void UpdateDepositRequest(DepositRequest depositRequest, List<DepositRequest> updatedDepositRequests,
+            MatchedOutput matchedOutput,
+            TransactionResult transactionResult, List<WalletTransaction> updatedWalletTransactions, string walletId,
+            List<WalletTransaction> newWalletTransactions)
         {
             var wasActive = depositRequest.Active;
             if (wasActive)
@@ -186,7 +191,6 @@ namespace PrivatePond.Services.NBXplorer
 
         private async Task UpdateSummaryContinuously(CancellationToken cancellationToken)
         {
-            
             while (!cancellationToken.IsCancellationRequested)
             {
                 await _nbXplorerSummaryProvider.UpdateClientState(cancellationToken);
@@ -206,14 +210,17 @@ namespace PrivatePond.Services.NBXplorer
                 {
                     continue;
                 }
+
                 var utxos = (await _explorerClient.GetUTXOsAsync(derivation, cancellationToken));
                 var utxoDict = utxos.Confirmed.UTXOs.Concat(utxos.Unconfirmed.UTXOs)
                     .ToDictionary(utxo => utxo.Outpoint.ToString());
-                var walletTransactions = await _walletService.GetWalletTransactions(new WalletService.WalletTransactionQuery()
-                {
-                    Ids = utxoDict.Keys.ToArray()
-                }, cancellationToken);
-                var missingTxs = utxoDict.Where(pair => walletTransactions.All(transaction => transaction.Id != pair.Key));
+                var walletTransactions = await _walletService.GetWalletTransactions(
+                    new WalletService.WalletTransactionQuery()
+                    {
+                        Ids = utxoDict.Keys.ToArray()
+                    }, cancellationToken);
+                var missingTxs =
+                    utxoDict.Where(pair => walletTransactions.All(transaction => transaction.Id != pair.Key));
                 var potentialDepositRequestIds = missingTxs.Select(pair => pair.Value.ScriptPubKey.Hash.ToString());
                 var matchedDepositRequests = (await _walletService.GetDepositRequests(
                     new WalletService.DepositRequestQuery()
@@ -229,11 +236,11 @@ namespace PrivatePond.Services.NBXplorer
                     {
                         UpdateDepositRequest(depositRequest, ctx.UpdatedDepositRequests, new MatchedOutput()
                         {
-                            Index =  keyValuePair.Value.Index,
+                            Index = keyValuePair.Value.Index,
                             Value = keyValuePair.Value.Value,
                             KeyPath = keyValuePair.Value.KeyPath,
                             ScriptPubKey = keyValuePair.Value.ScriptPubKey
-                        },tx,ctx.UpdatedWalletTransactions, walletId, ctx.AddedWalletTransactions );
+                        }, tx, ctx.UpdatedWalletTransactions, walletId, ctx.AddedWalletTransactions);
                     }
                     else
                     {
@@ -245,11 +252,12 @@ namespace PrivatePond.Services.NBXplorer
                             DepositRequestId = null,
                             InactiveDepositRequest = false
                         };
-                        UpdateWalletTransactionFromTransactionResult(newWalletTransaction,tx);
+                        UpdateWalletTransactionFromTransactionResult(newWalletTransaction, tx);
                         ctx.AddedWalletTransactions.Add(newWalletTransaction);
                     }
                 }
             }
+
             await _walletService.Update(ctx, cancellationToken);
         }
 
@@ -257,17 +265,19 @@ namespace PrivatePond.Services.NBXplorer
         private async Task CheckPendingTransactions(CancellationToken cancellationToken)
         {
             _logger.LogInformation("Updating pending transactions");
-           //refactor and use wallet get tx from start
-            var walletTransactions = await _walletService.GetWalletTransactions(new WalletService.WalletTransactionQuery()
-            {
-                IncludeWallet = true,
-                Statuses = new [] {WalletTransaction.WalletTransactionStatus.AwaitingConfirmation}
-            }, cancellationToken);
+            //refactor and use wallet get tx from start
+            var walletTransactions = await _walletService.GetWalletTransactions(
+                new WalletService.WalletTransactionQuery()
+                {
+                    IncludeWallet = true,
+                    Statuses = new[] {WalletTransaction.WalletTransactionStatus.AwaitingConfirmation}
+                }, cancellationToken);
             var txIds = walletTransactions.Select(transaction => transaction.OutPoint.Hash).ToHashSet();
-            var txFetchTasks = txIds.ToDictionary(s => s, s => _explorerClient.GetTransactionAsync(s, cancellationToken));
+            var txFetchTasks =
+                txIds.ToDictionary(s => s, s => _explorerClient.GetTransactionAsync(s, cancellationToken));
             await Task.WhenAll(txFetchTasks.Values);
             var updated = new List<WalletTransaction>();
-            
+
             foreach (var walletTransactionGroup in walletTransactions.GroupBy(transaction => transaction.OutPoint.Hash))
             {
                 var txResult = await txFetchTasks[walletTransactionGroup.Key];
@@ -281,7 +291,8 @@ namespace PrivatePond.Services.NBXplorer
             }
 
             var notUpdated0ConfirmationTransactions = walletTransactions.Where(transaction =>
-                transaction.Confirmations <= 0 && !updated.Contains(transaction)).GroupBy(transaction => transaction.WalletId).ToList();
+                    transaction.Confirmations <= 0 && !updated.Contains(transaction))
+                .GroupBy(transaction => transaction.WalletId).ToList();
             if (notUpdated0ConfirmationTransactions.Any())
             {
                 foreach (var notUpdated0ConfirmationTransactionGroup in notUpdated0ConfirmationTransactions)
@@ -300,7 +311,8 @@ namespace PrivatePond.Services.NBXplorer
                 }
             }
 
-            await _walletService.Update(new WalletService.UpdateContext(){ UpdatedWalletTransactions = updated}, cancellationToken);
+            await _walletService.Update(new WalletService.UpdateContext() {UpdatedWalletTransactions = updated},
+                cancellationToken);
         }
 
         private bool UpdateWalletTransactionFromTransactionResult(WalletTransaction walletTransaction,
@@ -312,13 +324,18 @@ namespace PrivatePond.Services.NBXplorer
             walletTransaction.Timestamp = transactionResult.Timestamp;
             walletTransaction.BlockHeight = transactionResult.Height;
             walletTransaction.Status = walletTransaction.Confirmations >= _options.Value.MinimumConfirmations
-                ? walletTransaction.InactiveDepositRequest ? WalletTransaction.WalletTransactionStatus.RequiresApproval :
-                WalletTransaction.WalletTransactionStatus.Confirmed
-                : WalletTransaction.WalletTransactionStatus.AwaitingConfirmation;
+                ? walletTransaction.InactiveDepositRequest
+                    ?
+                    WalletTransaction.WalletTransactionStatus.RequiresApproval
+                    :
+                    WalletTransaction.WalletTransactionStatus.Confirmed
+                : walletTransaction.Status == WalletTransaction.WalletTransactionStatus.Confirmed
+                    ? WalletTransaction.WalletTransactionStatus.Confirmed
+                    : WalletTransaction.WalletTransactionStatus.AwaitingConfirmation;
 
             return hash == walletTransaction.GetHashCode();
         }
-        
+
         public Task StopAsync(CancellationToken cancellationToken)
         {
             return Task.CompletedTask;

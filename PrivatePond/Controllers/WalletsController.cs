@@ -67,7 +67,12 @@ namespace PrivatePond.Controllers
             {
                 UpdatedWalletTransactions = txs
             }, CancellationToken.None);
-            return Ok();
+            if (txs.Any())
+            {
+                return Ok();
+            }
+
+            return NotFound();
         }
     }
 }

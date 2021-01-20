@@ -165,11 +165,8 @@ namespace PrivatePond.Services.NBXplorer
             if (matchedWalletTransaction != null)
             {
                 //this tx was already registered
-                if (UpdateWalletTransactionFromTransactionResult(matchedWalletTransaction,
-                    transactionResult))
-                {
-                    updatedWalletTransactions.Add(matchedWalletTransaction);
-                }
+                UpdateWalletTransactionFromTransactionResult(matchedWalletTransaction,
+                    transactionResult);
             }
             else
             {

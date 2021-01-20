@@ -64,7 +64,6 @@ namespace PrivatePond.Controllers
         {
             if (!string.IsNullOrEmpty(_options.Value.KeysDir))
             {
-
                 _fileSystemWatcher = new FileSystemWatcher()
                 {
                     Filter = "*.*",
@@ -77,7 +76,11 @@ namespace PrivatePond.Controllers
                 _fileSystemWatcher.Created += FileSystemWatcherOnChanged;
                 _fileSystemWatcher.Renamed += FileSystemWatcherOnChanged;
                 _fileSystemWatcher.Deleted += FileSystemWatcherOnChanged;
-
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "There is no keys directory configured. The system will treat every wallet as a cold wallet.");
             }
 
             await using var dbContext = _dbContextFactory.CreateDbContext();
@@ -116,8 +119,12 @@ namespace PrivatePond.Controllers
             var depositRequestsToDeactivate = await dbContext.DepositRequests.Include(request => request.Wallet)
                 .Where(request => !request.Wallet.Enabled).ToListAsync(cancellationToken);
 
-            _logger.LogInformation(
-                $"Deactivating {depositRequestsToDeactivate.Count} deposit requests do the wallet being disabled.");
+            if (depositRequestsToDeactivate.Count > 0)
+            {
+                _logger.LogInformation(
+                    $"Deactivating {depositRequestsToDeactivate.Count} deposit requests due to the wallet being disabled.");
+            }
+
             depositRequestsToDeactivate.ForEach(request => request.Active = false);
 
             //if we have previous wallets, we want to make sure nbx is still tracking them in case of unusual behavior, such as a user paying to an old deposit request.
@@ -131,6 +138,7 @@ namespace PrivatePond.Controllers
 
             await dbContext.SaveChangesAsync(cancellationToken);
             tcs.SetResult();
+            _logger.LogInformation("Wallet service is ready");
         }
 
         public async Task<KeyPathInformation> ReserveAddress(string walletId)
@@ -378,7 +386,7 @@ namespace PrivatePond.Controllers
         public async Task Update(UpdateContext context, CancellationToken cancellationToken)
         {
             _logger.LogInformation(
-                $"Adding {context.AddedWalletTransactions} wallet txs, updating {context.UpdatedWalletTransactions} wallet txs and {context.UpdatedDepositRequests} deposit requests");
+                $"Adding {context.AddedWalletTransactions.Count} wallet txs, updating {context.UpdatedWalletTransactions.Count} wallet txs and {context.UpdatedDepositRequests.Count} deposit requests");
             await using var dbContext = _dbContextFactory.CreateDbContext();
             dbContext.UpdateRange(context.UpdatedWalletTransactions);
             dbContext.UpdateRange(context.UpdatedDepositRequests);

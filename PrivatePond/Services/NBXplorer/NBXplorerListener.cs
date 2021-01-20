@@ -160,7 +160,7 @@ namespace PrivatePond.Services.NBXplorer
                 matchedOutput.Index);
             depositRequest.Active = false;
             var matchedWalletTransaction =
-                depositRequest.WalletTransactions.SingleOrDefault(transaction =>
+                depositRequest.WalletTransactions?.SingleOrDefault(transaction =>
                     transaction.OutPoint == outpoint);
             if (matchedWalletTransaction != null)
             {

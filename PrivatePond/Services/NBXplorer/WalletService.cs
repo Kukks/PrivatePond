@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Intrinsics.Arm;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.DataProtection;
@@ -57,7 +59,10 @@ namespace PrivatePond.Controllers
 
         public static string GetWalletId(DerivationStrategyBase derivationStrategy)
         {
-            return derivationStrategy.ToString().GetHashCode().ToString();
+            using var sha = new System.Security.Cryptography.SHA256Managed();
+            var textData = System.Text.Encoding.UTF8.GetBytes(derivationStrategy.ToString());
+            var hash = sha.ComputeHash(textData);
+            return BitConverter.ToString(hash).Replace("-", String.Empty);
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -358,7 +363,7 @@ namespace PrivatePond.Controllers
             {
                 return derivScheme;
             }
-
+            
             var derivationStrategy = _derivationStrategyFactory.Parse(derivationScheme);
             Derivations.Add(derivationScheme, derivationStrategy);
             return derivationStrategy;
@@ -415,17 +420,19 @@ namespace PrivatePond.Controllers
                     query.Ids.Contains(transaction.Id));
             }
 
-            return await Task.WhenAll(queryable.Select(wallet => FromDBModel(wallet)));
+            return await Task.WhenAll(( await queryable.ToListAsync( )).Select(FromDBModel));
         }
 
-        public async Task<WalletData> FromDBModel(Wallet wallet)
+        private async Task<WalletData> FromDBModel(Wallet wallet)
         {
             var derivation = await GetDerivationsByWalletId(wallet.Id);
             var balance = await _explorerClient.GetBalanceAsync(derivation);
             return new WalletData()
             {
                 Balance = ((Money) balance.Confirmed).ToDecimal(MoneyUnit.BTC),
-                Enabled = wallet.Enabled
+                Enabled = wallet.Enabled,
+                Id = wallet.Id,
+                
             };
         }
     }

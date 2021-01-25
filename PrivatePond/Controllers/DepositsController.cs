@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using NBitcoin;
 
 namespace PrivatePond.Controllers
 {
@@ -13,7 +14,7 @@ namespace PrivatePond.Controllers
             _depositService = depositService;
         }
 
-        [HttpGet("{userId}")]
+        [HttpGet("users/{userId}")]
         public async Task<ActionResult<DepositRequestData>> GetDepositRequest(string userId)
         {
             var result = await _depositService.GetOrGenerateDepositRequest(userId);
@@ -24,8 +25,8 @@ namespace PrivatePond.Controllers
 
             return result;
         }
-
-        [HttpGet("{userId}/history")]
+        
+        [HttpGet("users/{userId}/history")]
         public async Task<DepositRequestData> GetDepositRequestHistory(string userId)
         {
             return await _depositService.GetDepositRequestUserHistory(userId);

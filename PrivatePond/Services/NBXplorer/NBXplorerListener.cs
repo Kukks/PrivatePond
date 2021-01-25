@@ -45,6 +45,7 @@ namespace PrivatePond.Services.NBXplorer
             {
                 try
                 {
+                    await _walletService.WaitUntilWalletsLoaded();
                     _logger.LogInformation("Waiting for NBX to be ready");
                     await _explorerClient.WaitServerStartedAsync(cancellationToken);
                     await using var notificationSession =

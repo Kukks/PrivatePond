@@ -8,6 +8,7 @@ namespace PrivatePond.Data.EF
         public DbSet<DepositRequest> DepositRequests { get; set; }
         public DbSet<WalletTransaction> WalletTransactions { get; set; }
         public DbSet<Wallet> Wallets { get; set; }
+        public DbSet<TransferRequest> TransferRequests { get; set; }
 
         public PrivatePondDbContext(DbContextOptions<PrivatePondDbContext> options) : base(options)
         {

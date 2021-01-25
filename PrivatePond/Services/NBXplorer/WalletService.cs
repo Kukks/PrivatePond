@@ -120,6 +120,7 @@ namespace PrivatePond.Controllers
                 wallet.Enabled = true;
                 _logger.LogInformation($"Enabling wallet {wallet.Id}");
             }
+            
 
             var depositRequestsToDeactivate = await dbContext.DepositRequests.Include(request => request.Wallet)
                 .Where(request => !request.Wallet.Enabled).ToListAsync(cancellationToken);
@@ -426,6 +427,11 @@ namespace PrivatePond.Controllers
                     query.Ids.Contains(transaction.Id));
             }
 
+            if (query.Enabled.HasValue)
+            {
+                queryable = queryable.Where(wallet => wallet.Enabled == query.Enabled);
+            }
+
             return await Task.WhenAll(( await queryable.ToListAsync( )).Select(FromDBModel));
         }
 
@@ -446,5 +452,6 @@ namespace PrivatePond.Controllers
     public class WalletQuery
     {
         public string[] Ids { get; set; }
+        public bool? Enabled { get; set; }
     }
 }

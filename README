@@ -1,0 +1,11 @@
+## Running dev env
+* Install docker
+* Install .net core sdk 
+* run `docker-compose -f docker-compose.yml up`
+* start PrivatePond project through launch settings profile
+
+
+## Running whole stack in docker
+* `docker-compose -f docker-compose.yml -f docker-compose-run-locally.yml build --no-cache`
+* `docker-compose -f docker-compose.yml -f docker-compose-run-locally.yml up`
+* should become available at localhost:5000 

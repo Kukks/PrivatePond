@@ -3,9 +3,17 @@
 * Install .net core sdk 
 * run `docker-compose -f docker-compose.yml up`
 * start PrivatePond project through launch settings profile
+* The dev encironment is configured to have 3 wallets:
+* 2 wallets are single-signature hot wallets, configured to receive deposits to. 
+* 1 wallet is a multi-sig cold wallet, configured to receive funds when the hot wallets are "overflowing"
 
 
 ## Running whole stack in docker
 * `docker-compose -f docker-compose.yml -f docker-compose-run-locally.yml build --no-cache`
 * `docker-compose -f docker-compose.yml -f docker-compose-run-locally.yml up`
 * should become available at localhost:5000 
+* You can view API docs at localhost:5000/swagger
+
+## Helpers
+* You can emulate new blocks by alling the `docker-bitcoin-generate.sh` pr `.ps1` files. `docker-bitcoin-generate.sh 6` generates 6 blocks for example
+* You can use the bitcoin-cli sh/ps1 scripts to test sending funds.

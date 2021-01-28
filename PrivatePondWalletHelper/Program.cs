@@ -83,6 +83,7 @@ namespace PrivatePondWalletHelper
                     Console.WriteLine($"Xpriv is {xpriv.GetWif(network)}");
                     Console.WriteLine($"Xpub is {xpriv.Neuter().GetWif(network)}");
                     Console.WriteLine($"Fingerprint is {seed.DeriveExtKey().GetPublicKey().GetHDFingerPrint()}");
+                    
                 }
                 catch (Exception e)
                 {

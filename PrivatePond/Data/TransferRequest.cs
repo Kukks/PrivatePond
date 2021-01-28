@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using NBitcoin;
+using NBitcoin.Payment;
 
 namespace PrivatePond.Data
 {

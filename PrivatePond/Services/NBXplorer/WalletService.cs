@@ -208,43 +208,7 @@ namespace PrivatePond.Controllers
             public string[] UserIds { get; set; }
         }
 
-        public async Task<List<DepositRequest>> GetDepositRequests(DepositRequestQuery query,
-            CancellationToken cancellationToken)
-        {
-            await using var dbContext = _dbContextFactory.CreateDbContext();
-
-            var queryable = dbContext.DepositRequests.AsQueryable();
-            if (query.IncludeWalletTransactions)
-            {
-                queryable = queryable.Include(request => request.WalletTransactions);
-            }
-
-            if (query.WalletIds?.Any() is true)
-            {
-                queryable = queryable.Where(transaction =>
-                    query.WalletIds.Contains(transaction.WalletId));
-            }
-
-            if (query.Active.HasValue)
-            {
-                queryable = queryable.Where(transaction =>
-                    query.Active == transaction.Active);
-            }
-
-            if (query.Ids?.Any() is true)
-            {
-                queryable = queryable.Where(transaction =>
-                    query.Ids.Contains(transaction.Id));
-            }
-            if (query.UserIds?.Any() is true)
-            {
-                queryable = queryable.Where(transaction =>
-                    query.UserIds.Contains(transaction.UserId));
-            }
-
-            return await queryable.ToListAsync(cancellationToken);
-        }
-
+       
         public async Task<List<WalletTransaction>> GetWalletTransactions(WalletTransactionQuery query,
             CancellationToken cancellationToken)
         {

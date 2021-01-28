@@ -24,18 +24,18 @@ namespace PrivatePond.Controllers
             _walletService = walletService;
         }
 
-        public async Task<DepositRequestData> GetOrGenerateDepositRequest(string userId)
+        public async Task<List<DepositRequestData>> GetOrGenerateDepositRequest(string userId)
         {
             await _walletService.WaitUntilWalletsLoaded();
             await using var dbContext = _dbContextFactory.CreateDbContext();
 
-            var result = new DepositRequestData();
+            var result = new List<DepositRequestData>();
             var existingActive = await dbContext.DepositRequests.Where(request =>
                 request.UserId == userId && request.Active).ToListAsync();
 
             var walletsToRequestDepositDetails = _options.Value.Wallets.Where(option => option.AllowForDeposits &&
                 !existingActive.Exists(request => request.WalletId == option.WalletId)).ToList();
-            result.Items.AddRange(existingActive.Select(FromDbModel));
+            result.AddRange(existingActive.Select(FromDbModel));
             foreach (var walletToRequestDepositDetail in walletsToRequestDepositDetails)
             {
                 var kpi = await _walletService.ReserveAddress(walletToRequestDepositDetail.WalletId);
@@ -55,7 +55,7 @@ namespace PrivatePond.Controllers
                     KeyPath = kpi.KeyPath.ToString()
                 };
                 await dbContext.AddAsync(dr);
-                result.Items.Add(FromDbModel(dr));
+                result.Add(FromDbModel(dr));
             }
 
             await dbContext.SaveChangesAsync();
@@ -63,7 +63,7 @@ namespace PrivatePond.Controllers
             return result;
         }
 
-        private DepositRequestData.DepositRequestDataItem FromDbModel(DepositRequest request)
+        private DepositRequestData FromDbModel(DepositRequest request)
         {
             return new()
             {
@@ -71,7 +71,7 @@ namespace PrivatePond.Controllers
                 Label = request.Id,
                 PaymentLink = $"bitcoin:{request.Address}",
                 History = request?.WalletTransactions?.Select(transaction =>
-                    new DepositRequestData.DepositRequestDataItemPaymentItem()
+                    new DepositRequestDataItemPaymentItem()
                     {
                         Confirmed = transaction.Status == WalletTransaction.WalletTransactionStatus.Confirmed,
                         Timestamp = transaction.Timestamp,
@@ -80,22 +80,44 @@ namespace PrivatePond.Controllers
                     })?.ToList()
             };
         }
-
-        public async Task<DepositRequestData> GetDepositRequestUserHistory(string userId)
+        
+        public async Task<List<DepositRequest>> GetDepositRequests(WalletService.DepositRequestQuery query,
+            CancellationToken cancellationToken)
         {
+            
             await _walletService.WaitUntilWalletsLoaded();
             await using var dbContext = _dbContextFactory.CreateDbContext();
 
-            
-            return new DepositRequestData
+            var queryable = dbContext.DepositRequests.AsQueryable();
+            if (query.IncludeWalletTransactions)
             {
-                Items = (await _walletService.GetDepositRequests(new WalletService.DepositRequestQuery()
-                {
-                    Active = false,
-                    UserIds = new[] {userId},
-                    IncludeWalletTransactions = true,
-                }, CancellationToken.None)).Select(request => FromDbModel(request)).ToList()
-            };
+                queryable = queryable.Include(request => request.WalletTransactions);
+            }
+
+            if (query.WalletIds?.Any() is true)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.WalletIds.Contains(transaction.WalletId));
+            }
+
+            if (query.Active.HasValue)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.Active == transaction.Active);
+            }
+
+            if (query.Ids?.Any() is true)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.Ids.Contains(transaction.Id));
+            }
+            if (query.UserIds?.Any() is true)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.UserIds.Contains(transaction.UserId));
+            }
+
+            return await queryable.ToListAsync(cancellationToken);
         }
     }
 }

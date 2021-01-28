@@ -29,13 +29,16 @@ namespace PrivatePond.Data
         //mandatory keypath needed to create PSBTs for transfers
         public string[] RootedKeyPaths { get; set; }
         //the ideal max amount of funds in percentage of the sum of total enabled wallet balances
-        public decimal? MaximumFunds { get; set; }
+        // public decimal? MaximumFunds { get; set; }
         //the ideal minimum amount of funds in percentage of the sum of total enabled wallet balances
         public decimal? IdealBalance { get; set; }
         //if the min/max is reached, suggest a transfer from/to this wallet
         public string WalletReplenishmentSource { get; set; }
-        //If this wallet can be used for user withdrawal transfers
-        public decimal? AllowForTransfersUpTo { get; set; }
-        public decimal? AllowForTransfersFrom { get; set; }
+
+        public bool AllowForTransfers { get; set; }
+
+        // //If this wallet can be used for user withdrawal transfers
+        // public decimal? AllowForTransfersUpTo { get; set; }
+        // public decimal? AllowForTransfersFrom { get; set; }
     }
 }

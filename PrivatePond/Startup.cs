@@ -30,6 +30,8 @@ namespace PrivatePond
             services.AddNBXPlorerIntegration(Configuration);
             services.AddHttpClient();
             services.AddSingleton<DepositService>();
+            services.AddSingleton<TransferRequestService>();
+            services.AddSingleton<IHostedService,TransferRequestService>(provider => provider.GetRequiredService<TransferRequestService>());
             services.AddDataProtection(options => options.ApplicationDiscriminator = "PrivatePond");
             services.AddOptions<PrivatePondOptions>()
                 .Bind(Configuration.GetSection(PrivatePondOptions.OptionsConfigSection)).PostConfigure(

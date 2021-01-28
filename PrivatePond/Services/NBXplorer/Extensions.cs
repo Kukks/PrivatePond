@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NBitcoin;
 using NBXplorer;
 using NBXplorer.DerivationStrategy;
 using PrivatePond.Controllers;
@@ -54,7 +55,7 @@ namespace PrivatePond.Services.NBXplorer
 
                 return explorer;
             });
-
+            services.AddSingleton<Network>(provider => provider.GetRequiredService<ExplorerClient>().Network.NBitcoinNetwork);
             services.AddSingleton<NBXplorerSummaryProvider>();
             services.AddHostedService<NBXplorerListener>();
             services.AddSingleton<WalletService>();

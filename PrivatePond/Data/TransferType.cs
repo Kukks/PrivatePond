@@ -2,7 +2,7 @@ namespace PrivatePond.Data
 {
     public enum TransferType
     {
-        UserWithdrawal,
+        External,
         Internal
     }
 }

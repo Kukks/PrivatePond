@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using NBitcoin;
@@ -14,8 +16,14 @@ namespace PrivatePond.Controllers
             _depositService = depositService;
         }
 
+        [HttpGet("")]
+        public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequests(WalletService.DepositRequestQuery depositRequestQuery)
+        {
+            return Ok(await _depositService.GetDepositRequests(depositRequestQuery, CancellationToken.None));
+        }
+        
         [HttpGet("users/{userId}")]
-        public async Task<ActionResult<DepositRequestData>> GetDepositRequest(string userId)
+        public async Task<ActionResult<List<DepositRequestData>>> GetUserDepositRequest(string userId)
         {
             var result = await _depositService.GetOrGenerateDepositRequest(userId);
             if (result is null)
@@ -25,11 +33,15 @@ namespace PrivatePond.Controllers
 
             return result;
         }
-        
+
         [HttpGet("users/{userId}/history")]
-        public async Task<DepositRequestData> GetDepositRequestHistory(string userId)
+        public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequestHistory(string userId)
         {
-            return await _depositService.GetDepositRequestUserHistory(userId);
+            return Ok(await _depositService.GetDepositRequests(new WalletService.DepositRequestQuery()
+            {
+                UserIds = new[] {userId},
+                IncludeWalletTransactions = true
+            }, CancellationToken.None));
         }
     }
 }

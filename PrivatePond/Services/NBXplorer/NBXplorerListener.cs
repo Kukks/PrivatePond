@@ -21,15 +21,17 @@ namespace PrivatePond.Services.NBXplorer
         private readonly ILogger<NBXplorerListener> _logger;
         private readonly WalletService _walletService;
         private readonly IOptions<PrivatePondOptions> _options;
+        private readonly DepositService _depositService;
 
         public NBXplorerListener(ExplorerClient explorerClient, NBXplorerSummaryProvider nbXplorerSummaryProvider,
-            ILogger<NBXplorerListener> logger, WalletService walletService, IOptions<PrivatePondOptions> options)
+            ILogger<NBXplorerListener> logger, WalletService walletService, IOptions<PrivatePondOptions> options, DepositService depositService)
         {
             _explorerClient = explorerClient;
             _nbXplorerSummaryProvider = nbXplorerSummaryProvider;
             _logger = logger;
             _walletService = walletService;
             _options = options;
+            _depositService = depositService;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -71,7 +73,7 @@ namespace PrivatePond.Services.NBXplorer
                                     var depositIdToOutput =
                                         txEvent.Outputs.ToDictionary(output => output.ScriptPubKey.Hash.ToString());
 
-                                    var matchedDepositRequests = await _walletService.GetDepositRequests(
+                                    var matchedDepositRequests = await _depositService.GetDepositRequests(
                                         new WalletService.DepositRequestQuery()
                                         {
                                             IncludeWalletTransactions = true,
@@ -223,7 +225,7 @@ namespace PrivatePond.Services.NBXplorer
                 var missingTxs =
                     utxoDict.Where(pair => walletTransactions.All(transaction => transaction.Id != pair.Key));
                 var potentialDepositRequestIds = missingTxs.Select(pair => pair.Value.ScriptPubKey.Hash.ToString());
-                var matchedDepositRequests = (await _walletService.GetDepositRequests(
+                var matchedDepositRequests = (await _depositService.GetDepositRequests(
                     new WalletService.DepositRequestQuery()
                     {
                         Ids = potentialDepositRequestIds.ToArray()

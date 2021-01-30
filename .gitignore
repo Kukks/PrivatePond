@@ -4,3 +4,4 @@ obj/
 riderModule.iml
 /_ReSharper.Caches/
 .idea/.idea.PrivatePond/.idea/dataSources/06992b6b-2447-4c75-9ea6-9492d6395912/storage_v2/_src_/database/privatepondregtest.LmjyJg/schema
+.env

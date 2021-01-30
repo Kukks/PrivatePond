@@ -18,8 +18,10 @@ services:
       - "65467:65467"
     expose:
       - "65467"
+    env_file:
+      - .env
     environment:
-      NBXPLORER_NETWORK: regtest
+      NBXPLORER_NETWORK: ${NETWORK:-regtest}
       NBXPLORER_CHAINS: "btc"
       NBXPLORER_BTCRPCURL: http://bitcoind:65468/
       NBXPLORER_BTCNODEENDPOINT: bitcoind:65469
@@ -38,8 +40,10 @@ services:
   bitcoind:
     restart: unless-stopped
     image: btcpayserver/bitcoin:0.20.1
+    env_file:
+      - .env
     environment:
-      BITCOIN_NETWORK: regtest
+      BITCOIN_NETWORK: ${NETWORK:-regtest}
       BITCOIN_EXTRA_ARGS: |-
         rpcuser=ceiwHEbqWI83
         rpcpassword=DwubwWsoo3

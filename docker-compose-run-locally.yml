@@ -8,12 +8,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://0.0.0.0:80"
       PP_NBXPLORER__EXPLORERURI: "http://nbxplorer:65467"
       PP_NBXPLORER__COOKIEFILE: ""
-      PP_PRIVATEPOND__NETWORKTYPE: "regtest"
+      PP_PRIVATEPOND__NETWORKTYPE: ${NETWORK:-regtest}
       PP_CONNECTIONSTRINGS__PRIVATEPONDDATABASE: "User ID=postgres;Host=postgres;Port=5432;Database=privatepondregtest"
       PP_PRIVATEPOND__BatchTransfersEvery: "5"
 

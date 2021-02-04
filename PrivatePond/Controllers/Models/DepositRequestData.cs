@@ -5,6 +5,7 @@ namespace PrivatePond.Controllers
 {
     public class DepositRequestData
     {
+        public string WalletId { get; set; }
         public string Label { get; set; }
         public string Destination { get; set; }
         public string PaymentLink { get; set; }

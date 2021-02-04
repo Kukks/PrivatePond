@@ -21,8 +21,8 @@ namespace PrivatePond
                 .ConfigureAppConfiguration(builder => builder.AddEnvironmentVariables("PP_"))
                 .ConfigureLogging(l =>
                 {
-                    // l.AddFilter("Microsoft", LogLevel.Error);
-                    // l.AddFilter("System.Net.Http.HttpClient", LogLevel.Critical);
+                    l.AddFilter("Microsoft", LogLevel.Error);
+                    l.AddFilter("System.Net.Http.HttpClient", LogLevel.Critical);
                 })
                 .ConfigureWebHostDefaults(webBuilder => { webBuilder.UseStartup<Startup>(); });
     }

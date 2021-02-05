@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PrivatePond.Data.EF;
@@ -9,9 +10,10 @@ using PrivatePond.Data.EF;
 namespace PrivatePond.Migrations
 {
     [DbContext(typeof(PrivatePondDbContext))]
-    partial class PrivatePondDbContextModelSnapshot : ModelSnapshot
+    [Migration("20210205084041_TransferRequestId_SigningRequestsAdd")]
+    partial class TransferRequestId_SigningRequestsAdd
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -83,7 +85,6 @@ namespace PrivatePond.Migrations
             modelBuilder.Entity("PrivatePond.Data.TransferRequest", b =>
                 {
                     b.Property<string>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("text");
 
                     b.Property<decimal>("Amount")
@@ -92,11 +93,20 @@ namespace PrivatePond.Migrations
                     b.Property<string>("Destination")
                         .HasColumnType("text");
 
+                    b.Property<string>("FromWalletId")
+                        .HasColumnType("text");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("Timestamp")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ToUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ToWalletId")
+                        .HasColumnType("text");
 
                     b.Property<int>("TransferType")
                         .HasColumnType("integer");

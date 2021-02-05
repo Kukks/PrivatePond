@@ -7,6 +7,5 @@ namespace PrivatePond.Controllers
         [Required]
         public string Destination { get; set; }
         public decimal? Amount { get; set; }
-        public string UserId { get; set; }
     }
 }

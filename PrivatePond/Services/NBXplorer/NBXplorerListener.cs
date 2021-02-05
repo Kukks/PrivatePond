@@ -74,7 +74,7 @@ namespace PrivatePond.Services.NBXplorer
                                         txEvent.Outputs.ToDictionary(output => output.ScriptPubKey.Hash.ToString());
 
                                     var matchedDepositRequests = await _depositService.GetDepositRequests(
-                                        new WalletService.DepositRequestQuery()
+                                        new DepositRequestQuery()
                                         {
                                             IncludeWalletTransactions = true,
                                             Ids = depositIdToOutput.Keys.ToArray(),
@@ -94,7 +94,7 @@ namespace PrivatePond.Services.NBXplorer
 
                                     //whatever is left in depositIdToOutput, is not a deposit request but some external transfer. We should log it 
                                     var unmatchedWalletTransactions = await _walletService.GetWalletTransactions(
-                                        new WalletService.WalletTransactionQuery()
+                                        new WalletTransactionQuery()
                                         {
                                             WalletIds = new[] {walletId},
                                             Ids = depositIdToOutput.Keys.ToArray()
@@ -218,7 +218,7 @@ namespace PrivatePond.Services.NBXplorer
                 var utxoDict = utxos.Confirmed.UTXOs.Concat(utxos.Unconfirmed.UTXOs)
                     .ToDictionary(utxo => utxo.Outpoint.ToString());
                 var walletTransactions = await _walletService.GetWalletTransactions(
-                    new WalletService.WalletTransactionQuery()
+                    new WalletTransactionQuery()
                     {
                         Ids = utxoDict.Keys.ToArray()
                     }, cancellationToken);
@@ -226,7 +226,7 @@ namespace PrivatePond.Services.NBXplorer
                     utxoDict.Where(pair => walletTransactions.All(transaction => transaction.Id != pair.Key));
                 var potentialDepositRequestIds = missingTxs.Select(pair => pair.Value.ScriptPubKey.Hash.ToString());
                 var matchedDepositRequests = (await _depositService.GetDepositRequests(
-                    new WalletService.DepositRequestQuery()
+                    new DepositRequestQuery()
                     {
                         Ids = potentialDepositRequestIds.ToArray()
                     }, cancellationToken)).ToDictionary(request => request.Id);
@@ -270,7 +270,7 @@ namespace PrivatePond.Services.NBXplorer
             _logger.LogInformation("Updating pending transactions");
             //refactor and use wallet get tx from start
             var walletTransactions = await _walletService.GetWalletTransactions(
-                new WalletService.WalletTransactionQuery()
+                new WalletTransactionQuery()
                 {
                     IncludeWallet = true,
                     Statuses = new[] {WalletTransaction.WalletTransactionStatus.AwaitingConfirmation}

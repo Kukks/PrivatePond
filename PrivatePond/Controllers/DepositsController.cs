@@ -17,7 +17,7 @@ namespace PrivatePond.Controllers
         }
 
         [HttpGet("")]
-        public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequests(WalletService.DepositRequestQuery depositRequestQuery)
+        public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequests(DepositRequestQuery depositRequestQuery)
         {
             return Ok(await _depositService.GetDepositRequests(depositRequestQuery, CancellationToken.None));
         }
@@ -37,7 +37,7 @@ namespace PrivatePond.Controllers
         [HttpGet("users/{userId}/history")]
         public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequestHistory(string userId)
         {
-            return Ok(await _depositService.GetDepositRequests(new WalletService.DepositRequestQuery()
+            return Ok(await _depositService.GetDepositRequests(new DepositRequestQuery()
             {
                 UserIds = new[] {userId},
                 IncludeWalletTransactions = true

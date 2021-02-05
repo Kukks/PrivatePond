@@ -1,12 +1,13 @@
 using NBitcoin;
 using NBitcoin.Payment;
+using NBXplorer.DerivationStrategy;
 
 namespace PrivatePond
 {
-    public class HelperExtensions
+    public static class HelperExtensions
     {
-        
-        public static string GetAddress(string destination, Network network, out ScriptPubKeyType? scriptPubKeyType, out decimal? amount)
+        public static string GetAddress(string destination, Network network, out ScriptPubKeyType? scriptPubKeyType,
+            out decimal? amount)
         {
             BitcoinAddress address;
             amount = null;
@@ -23,21 +24,39 @@ namespace PrivatePond
             switch (address)
             {
                 case BitcoinPubKeyAddress bitcoinPubKeyAddress:
-                    scriptPubKeyType = ScriptPubKeyType.Legacy;
+                    scriptPubKeyType = NBitcoin.ScriptPubKeyType.Legacy;
                     break;
                 case BitcoinScriptAddress bitcoinScriptAddress:
-                    scriptPubKeyType = ScriptPubKeyType.SegwitP2SH;
+                    scriptPubKeyType = NBitcoin.ScriptPubKeyType.SegwitP2SH;
                     break;
                 case BitcoinWitPubKeyAddress bitcoinWitPubKeyAddress:
-                    scriptPubKeyType = ScriptPubKeyType.Segwit;
+                    scriptPubKeyType = NBitcoin.ScriptPubKeyType.Segwit;
                     break;
                 case BitcoinWitScriptAddress bitcoinWitScriptAddress:
-                    scriptPubKeyType = ScriptPubKeyType.Segwit;
+                    scriptPubKeyType = NBitcoin.ScriptPubKeyType.Segwit;
 
                     break;
             }
 
             return address.ToString();
+        }
+
+        public static ScriptPubKeyType ScriptPubKeyType(this DerivationStrategyBase derivationStrategyBase)
+        {
+            if (IsSegwitCore(derivationStrategyBase))
+            {
+                return NBitcoin.ScriptPubKeyType.Segwit;
+            }
+
+            return (derivationStrategyBase is P2SHDerivationStrategy p2shStrat && IsSegwitCore(p2shStrat.Inner))
+                ? NBitcoin.ScriptPubKeyType.SegwitP2SH
+                : NBitcoin.ScriptPubKeyType.Legacy;
+        }
+
+        private static bool IsSegwitCore(DerivationStrategyBase derivationStrategyBase)
+        {
+            return (derivationStrategyBase is P2WSHDerivationStrategy) ||
+                   (derivationStrategyBase is DirectDerivationStrategy direct) && direct.Segwit;
         }
     }
 }

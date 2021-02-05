@@ -20,6 +20,7 @@
         "PP_NBXPLORER__EXPLORERURI": "http://localhost:65467",
         "PP_NBXPLORER__COOKIEFILE": "",
         "PP_PRIVATEPOND__NETWORKTYPE": "regtest",
+        "PP_PRIVATEPOND__KEYSDIR": "keys",
         "PP_CONNECTIONSTRINGS__PRIVATEPONDDATABASE": "User ID=postgres;Host=127.0.0.1;Port=65466;Database=privatepondregtest",
         "PP_PRIVATEPOND__BatchTransfersEvery": "5",
         

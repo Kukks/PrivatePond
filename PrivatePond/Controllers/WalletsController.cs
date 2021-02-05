@@ -44,7 +44,7 @@ namespace PrivatePond.Controllers
         public async Task<ActionResult<List<WalletTransaction>>> GetWalletTransactions(string walletId, int skip = 0,
             int take = int.MaxValue)
         {
-            var txs = await _walletService.GetWalletTransactions(new WalletService.WalletTransactionQuery()
+            var txs = await _walletService.GetWalletTransactions(new WalletTransactionQuery()
             {
                 WalletIds = new[] {walletId},
                 Skip = skip,
@@ -56,7 +56,7 @@ namespace PrivatePond.Controllers
         [HttpPost("{walletId}/transactions/{walletTransactionId}/approve")]
         public async Task<ActionResult> ApproveWalletTransaction(string walletId, string walletTransactionId)
         {
-            var txs = await _walletService.GetWalletTransactions(new WalletService.WalletTransactionQuery()
+            var txs = await _walletService.GetWalletTransactions(new WalletTransactionQuery()
             {
                 WalletIds = new[] {walletId},
                 Ids = new[] {walletTransactionId},

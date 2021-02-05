@@ -17,10 +17,7 @@ namespace PrivatePond.Services.NBXplorer
 
         public NBXplorerSummary LastSummary
         {
-            get
-            {
-                return _lastSummary;
-            }
+            get { return _lastSummary; }
             private set
             {
                 _lastSummary = value;
@@ -32,16 +29,19 @@ namespace PrivatePond.Services.NBXplorer
         private readonly IOptions<PrivatePondOptions> _options;
         private NBXplorerSummary _lastSummary;
 
-        public NBXplorerSummaryProvider(IOptions<PrivatePondOptions> options, ILogger<NBXplorerSummaryProvider> logger, ExplorerClient explorerClient)
+        public NBXplorerSummaryProvider(IOptions<PrivatePondOptions> options, ILogger<NBXplorerSummaryProvider> logger,
+            ExplorerClient explorerClient)
         {
             _options = options;
             _logger = logger;
             _explorerClient = explorerClient;
         }
-        
+
         public async Task UpdateClientState(CancellationToken cancellation)
         {
-            _logger.LogInformation($"Updating summary for {_explorerClient.CryptoCode}");
+            if (LastSummary is null || !string.IsNullOrEmpty(LastSummary.Error) ||
+                LastSummary.State != NBXplorerState.Ready)
+                _logger.LogInformation($"Updating summary for {_explorerClient.CryptoCode}");
             var state = (NBXplorerState?) null;
             string error = null;
             StatusResult status = null;
@@ -84,7 +84,8 @@ namespace PrivatePond.Services.NBXplorer
                 State = state.GetValueOrDefault(NBXplorerState.NotConnected),
                 Error = error
             };
-            _logger.LogInformation($"summary updated {_explorerClient.CryptoCode}");
+            if (LastSummary is null || LastSummary.Error != summary.Error || LastSummary.State != summary.State)
+                _logger.LogInformation($"summary updated {_explorerClient.CryptoCode}");
             LastSummary = summary;
         }
     }

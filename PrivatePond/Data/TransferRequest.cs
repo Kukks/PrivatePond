@@ -1,16 +1,13 @@
 using System;
 using System.Collections.Generic;
-using NBitcoin;
-using NBitcoin.Payment;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PrivatePond.Data
 {
     public class TransferRequest
     {
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public string Id { get; set; }
-        public string ToUserId { get; set; }
-        public string ToWalletId { get; set; }
-        public string FromWalletId { get; set; }
         public List<WalletTransaction> WalletTransactions { get; set; }
         public TransferStatus Status { get; set; }
         public decimal Amount { get; set; }

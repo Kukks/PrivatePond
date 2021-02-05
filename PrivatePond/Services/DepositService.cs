@@ -82,7 +82,7 @@ namespace PrivatePond.Controllers
             };
         }
         
-        public async Task<List<DepositRequest>> GetDepositRequests(WalletService.DepositRequestQuery query,
+        public async Task<List<DepositRequest>> GetDepositRequests(DepositRequestQuery query,
             CancellationToken cancellationToken)
         {
             

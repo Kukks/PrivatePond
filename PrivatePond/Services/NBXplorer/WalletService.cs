@@ -69,6 +69,8 @@ namespace PrivatePond.Controllers
         {
             if (!string.IsNullOrEmpty(_options.Value.KeysDir))
             {
+                var keysDir = Directory.CreateDirectory(_options.Value.KeysDir);
+                _logger.LogInformation($"keys directory configured: {keysDir.FullName}"); 
                 _fileSystemWatcher = new FileSystemWatcher()
                 {
                     Filter = "*.*",
@@ -189,24 +191,6 @@ namespace PrivatePond.Controllers
             return res;
         }
 
-        public class WalletTransactionQuery
-        {
-            public bool IncludeWallet { get; set; }
-            public WalletTransaction.WalletTransactionStatus[] Statuses { get; set; }
-            public string[] Ids { get; set; }
-            public string[] WalletIds { get; set; }
-            public int? Skip { get; set; }
-            public int? Take { get; set; }
-        }
-
-        public class DepositRequestQuery
-        {
-            public bool? Active { get; set; }
-            public bool IncludeWalletTransactions { get; set; }
-            public string[] WalletIds { get; set; }
-            public string[] Ids { get; set; }
-            public string[] UserIds { get; set; }
-        }
 
        
         public async Task<List<WalletTransaction>> GetWalletTransactions(WalletTransactionQuery query,
@@ -290,21 +274,30 @@ namespace PrivatePond.Controllers
                 }
                 else
                 {
-                    var unencrypted = await File.ReadAllTextAsync(walletKeyPath);
-                    key = ExtKey.Parse(unencrypted, network);
-                    if (!key.Neuter()
-                        .Equals(extPubKey))
+                    try
+                    {
+                        var unencrypted = await File.ReadAllTextAsync(walletKeyPath);
+                        key = ExtKey.Parse(unencrypted, network);
+                        if (!key.Neuter()
+                            .Equals(extPubKey))
+                        {
+                            _logger.LogError(
+                                $"Mismatch in loading the unencrypted key for {extPubKey.GetWif(network)}. File will be deleted. If you wish to automatically sign transfers with this xpub, recreate the file with the correct key(xprv).");
+                            File.Delete(walletKeyPath);
+                            key = null;
+                        }
+                        else
+                        {
+                            await File.WriteAllTextAsync(walletKeyPathEncrypted, _protector.Protect( key.GetWif(network).ToString()));
+                            File.Delete(walletKeyPath);
+                        }
+                    }
+                    catch (Exception e)
                     {
                         _logger.LogError(
-                            $"Mismatch in loading the unencrypted key for {extPubKey.GetWif(network)}. File will be deleted. If you wish to automatically sign transfers with this xpub, recreate the file with the correct key.");
-                        File.Delete(walletKeyPath);
-                        key = null;
+                            $"Mismatch in loading the unencrypted key for {extPubKey.GetWif(network)}. If you wish to automatically sign transfers with this xpub, recreate the file with the correct key(xprv).");
                     }
-                    else
-                    {
-                        await File.WriteAllTextAsync(walletKeyPathEncrypted, key.GetWif(network).ToString());
-                        File.Delete(walletKeyPath);
-                    }
+                    
                 }
             }
 
@@ -411,6 +404,31 @@ namespace PrivatePond.Controllers
                 
             };
         }
+
+        public async Task<PSBT> SignWithHotWallets(string[] walletIdsToSignWith, PSBT psbt)
+        {
+            var resultingPSBT = psbt.Clone();
+            var derivationsByWalletId = walletIdsToSignWith.ToDictionary(s => s, GetDerivationsByWalletId);
+            await Task.WhenAll(derivationsByWalletId.Values);
+            foreach (var task in derivationsByWalletId)
+            {
+                var deriv = await task.Value;
+                var xpubs = deriv.GetExtPubKeys();
+                foreach (var xpub in xpubs)
+                {
+                    var key = await LoadKey(xpub);
+                    if (key is null)
+                    {
+                        continue;
+                    }
+
+                    // resultingPSBT.SignAll(xpub.AsHDScriptPubKey(deriv.ScriptPubKeyType()), key);
+                    resultingPSBT.SignAll(deriv.AsHDRedeemScriptPubKey(), key);
+                }
+            }
+
+            return resultingPSBT;
+        }
     }
 
     public class WalletQuery
@@ -418,4 +436,24 @@ namespace PrivatePond.Controllers
         public string[] Ids { get; set; }
         public bool? Enabled { get; set; }
     }
+    
+    public class WalletTransactionQuery
+    {
+        public bool IncludeWallet { get; set; }
+        public WalletTransaction.WalletTransactionStatus[] Statuses { get; set; }
+        public string[] Ids { get; set; }
+        public string[] WalletIds { get; set; }
+        public int? Skip { get; set; }
+        public int? Take { get; set; }
+    }
+
+    public class DepositRequestQuery
+    {
+        public bool? Active { get; set; }
+        public bool IncludeWalletTransactions { get; set; }
+        public string[] WalletIds { get; set; }
+        public string[] Ids { get; set; }
+        public string[] UserIds { get; set; }
+    }
+
 }

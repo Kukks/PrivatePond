@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using PrivatePond.Data;
 
 namespace PrivatePond.Controllers
@@ -10,7 +10,9 @@ namespace PrivatePond.Controllers
         public string Destination { get; set; }
         public decimal Amount { get; set; }
         public DateTimeOffset Timestamp { get; set; }
+        
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public TransferStatus Status { get; set; }
-        public List<WalletTransaction> WalletTransactions { get; set; }
+        public string TransactionHash { get; set; }
     }
 }

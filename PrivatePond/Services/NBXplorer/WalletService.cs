@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,7 @@ using NBitcoin;
 using NBXplorer;
 using NBXplorer.DerivationStrategy;
 using NBXplorer.Models;
+using Newtonsoft.Json.Converters;
 using PrivatePond.Data;
 using PrivatePond.Data.EF;
 
@@ -412,48 +414,26 @@ namespace PrivatePond.Controllers
             await Task.WhenAll(derivationsByWalletId.Values);
             foreach (var task in derivationsByWalletId)
             {
+                var walletOption = _options.Value.Wallets.Single(option => option.WalletId == task.Key);
                 var deriv = await task.Value;
                 var xpubs = deriv.GetExtPubKeys();
+                int i = 0;
                 foreach (var xpub in xpubs)
                 {
                     var key = await LoadKey(xpub);
                     if (key is null)
                     {
+                        i++;
                         continue;
                     }
 
-                    // resultingPSBT.SignAll(xpub.AsHDScriptPubKey(deriv.ScriptPubKeyType()), key);
-                    resultingPSBT.SignAll(deriv.AsHDRedeemScriptPubKey(), key);
+                    var rootedKeyPath = RootedKeyPath.Parse(walletOption.RootedKeyPaths[i]);
+                    resultingPSBT = resultingPSBT.SignAll(deriv, key, rootedKeyPath);
+                    i++;
                 }
             }
 
             return resultingPSBT;
         }
     }
-
-    public class WalletQuery
-    {
-        public string[] Ids { get; set; }
-        public bool? Enabled { get; set; }
-    }
-    
-    public class WalletTransactionQuery
-    {
-        public bool IncludeWallet { get; set; }
-        public WalletTransaction.WalletTransactionStatus[] Statuses { get; set; }
-        public string[] Ids { get; set; }
-        public string[] WalletIds { get; set; }
-        public int? Skip { get; set; }
-        public int? Take { get; set; }
-    }
-
-    public class DepositRequestQuery
-    {
-        public bool? Active { get; set; }
-        public bool IncludeWalletTransactions { get; set; }
-        public string[] WalletIds { get; set; }
-        public string[] Ids { get; set; }
-        public string[] UserIds { get; set; }
-    }
-
 }

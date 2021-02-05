@@ -22,9 +22,10 @@ namespace PrivatePond.Services.NBXplorer
         private readonly WalletService _walletService;
         private readonly IOptions<PrivatePondOptions> _options;
         private readonly DepositService _depositService;
+        private readonly TransferRequestService _transferRequestService;
 
         public NBXplorerListener(ExplorerClient explorerClient, NBXplorerSummaryProvider nbXplorerSummaryProvider,
-            ILogger<NBXplorerListener> logger, WalletService walletService, IOptions<PrivatePondOptions> options, DepositService depositService)
+            ILogger<NBXplorerListener> logger, WalletService walletService, IOptions<PrivatePondOptions> options, DepositService depositService, TransferRequestService transferRequestService)
         {
             _explorerClient = explorerClient;
             _nbXplorerSummaryProvider = nbXplorerSummaryProvider;
@@ -32,6 +33,7 @@ namespace PrivatePond.Services.NBXplorer
             _walletService = walletService;
             _options = options;
             _depositService = depositService;
+            _transferRequestService = transferRequestService;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -316,6 +318,32 @@ namespace PrivatePond.Services.NBXplorer
 
             await _walletService.Update(new WalletService.UpdateContext() {UpdatedWalletTransactions = updated},
                 cancellationToken);
+
+            //let's handle transfer requests that were started now
+
+            var processingRequests = await _transferRequestService.GetTransferRequests(new TransferRequestQuery()
+            {
+                Statuses = new[] {TransferStatus.Processing}
+            });
+
+            var txFetchResult = processingRequests.GroupBy(data => data.TransactionHash).Select(datas =>
+                (datas, _explorerClient.GetTransactionAsync(uint256.Parse(datas.Key), cancellationToken)));
+            await Task.WhenAll(txFetchResult.Select(t => t.Item2));
+            var completedTransferRequestIds = new List<string>();
+            foreach (var txFetch in txFetchResult)
+            {
+                var tx = await txFetch.Item2;
+                if (tx != null && tx.Confirmations >= _options.Value.MinimumConfirmations)
+                {
+                    completedTransferRequestIds.AddRange(txFetch.datas.Select(data => data.Id));
+                }
+            }
+
+            if (completedTransferRequestIds.Any())
+            {
+               await _transferRequestService.MarkCompleted(completedTransferRequestIds);
+            }
+            
         }
 
         private bool UpdateWalletTransactionFromTransactionResult(WalletTransaction walletTransaction,

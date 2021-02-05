@@ -51,6 +51,7 @@ namespace PrivatePond
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {
+                c.DescribeAllEnumsAsStrings();
                 c.SwaggerDoc("v1", new OpenApiInfo {Title = "PrivatePond", Version = "v1"});
             });
         }

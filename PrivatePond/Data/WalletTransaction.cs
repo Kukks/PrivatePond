@@ -1,11 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NBitcoin;
-using NBitcoin.JsonConverters;
-using Newtonsoft.Json.Converters;
 
 namespace PrivatePond.Data
 {
@@ -13,6 +9,7 @@ namespace PrivatePond.Data
     {
         public string Id { get; set; }
         public string DepositRequestId { get; set; }
+        public string TransferRequestId { get; set; }
         public string BlockHash { get; set; }
         public int Confirmations { get; set; }
         public decimal Amount { get; set; }

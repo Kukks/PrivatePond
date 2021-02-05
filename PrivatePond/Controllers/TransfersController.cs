@@ -21,7 +21,7 @@ namespace PrivatePond.Controllers
         }
         
         [HttpGet("")]
-        public async Task<ActionResult<List<TransferRequestData>>> GetDepositRequests(TransferRequestQuery query)
+        public async Task<ActionResult<List<TransferRequestData>>> GetTransferRequests(TransferRequestQuery query)
         {
             return Ok(await _transferRequestService.GetTransferRequests(query));
         }

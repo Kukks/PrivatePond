@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
+using PrivatePond.Data.EF;
 
 namespace PrivatePond.Data
 {
@@ -8,11 +8,13 @@ namespace PrivatePond.Data
     {
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public string Id { get; set; }
-        public List<WalletTransaction> WalletTransactions { get; set; }
         public TransferStatus Status { get; set; }
         public decimal Amount { get; set; }
         public string Destination { get; set; }
         public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
         public TransferType TransferType { get; set; }
+        public string SigningRequestId { get; set; }
+
+        public SigningRequest SigningRequest { get; set; }
     }
 }

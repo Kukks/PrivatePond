@@ -12,6 +12,10 @@ namespace PrivatePond.Controllers
         {
             _nbXplorerSummaryProvider = nbXplorerSummaryProvider;
         }
+        /// <summary>
+        /// Get NBXplorer Status
+        /// </summary>
+        /// <returns>The last fetched status of NBXplorer and the Bitcoin node.</returns>
         [HttpGet]
         public IActionResult Index()
         {

@@ -124,7 +124,17 @@ namespace PrivatePond.Controllers
                 wallet.Enabled = true;
                 _logger.LogInformation($"Enabling wallet {wallet.Id}");
             }
-            
+
+            foreach (var walletOption in _options.Value.Wallets)
+            {
+                if (string.IsNullOrEmpty(walletOption.WalletReplenishmentSource))
+                {
+                    continue;
+                }
+
+                walletOption.WalletReplenishmentSourceWalletId =
+                    GetWalletId(GetDerivationStrategy(walletOption.DerivationScheme));
+            }
 
             var depositRequestsToDeactivate = await dbContext.DepositRequests.Include(request => request.Wallet)
                 .Where(request => !request.Wallet.Enabled).ToListAsync(cancellationToken);

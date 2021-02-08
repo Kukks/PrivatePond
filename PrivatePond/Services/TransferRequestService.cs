@@ -39,68 +39,84 @@ namespace PrivatePond.Controllers
             _logger = logger;
         }
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public async Task StartAsync(CancellationToken cancellationToken)
         {
-            _ = MonitorBalances(cancellationToken);
+            
+            await _walletService.WaitUntilWalletsLoaded();
+            
+            
             _ = ProcessTransferRequestsWithHotWallet(cancellationToken);
-            return Task.CompletedTask;
         }
 
-        private async Task MonitorBalances(CancellationToken token)
+        private async Task ClearInternalPendingRequests(CancellationToken cancellationToken)
         {
-            while (!token.IsCancellationRequested)
+            await _explorerClient.WaitServerStartedAsync(cancellationToken);
+            //we should clear any pending requests for internal transfers and elt the system compute them on startup
+            await using var context = _dbContextFactory.CreateDbContext();
+            var transferRequests= await GetTransferRequests(new TransferRequestQuery()
             {
-                await _walletService.WaitUntilWalletsLoaded();
-                var walletBalances = (await _walletService.GetWallets(new WalletQuery()
+                TransferTypes = new[] {TransferType.Internal}, Statuses = new[] {TransferStatus.Pending}
+            });
+        }
+
+        private async Task<List<TransferRequest>> BalanceWallets(Dictionary<string, decimal> walletBalances,CancellationToken token)
+        {
+            var totalSum = walletBalances.Sum(data => data.Value);
+            if (totalSum == 0)
+            {
+                return new List<TransferRequest>();
+            }
+
+            var result = new List<TransferRequest>();
+            // we can never be 100% accurate to the desired ratios. Allow a variation of specified percentage 
+            var tolerance = 2;
+            foreach (var wallet in _options.Value.Wallets)
+            {
+                if (wallet.IdealBalance.HasValue && wallet.WalletReplenishmentSource != null)
                 {
-                    Enabled = true
-                })).ToDictionary(data => data.Id);
-                var totalSum = walletBalances.Sum(data => data.Value.Balance);
-                if (totalSum == 0)
-                {
-                    break;
-                }
-                // we can never be 100% accurate to the desired ratios. Allow a variation of specified percentage 
-                var tolerance = 2;
-                foreach (var wallet in _options.Value.Wallets)
-                {
-                    if (wallet.IdealBalance.HasValue && wallet.WalletReplenishmentSource != null)
+                    var balance = walletBalances[wallet.WalletId];
+                    var percentageOfTotal = (balance / totalSum) * 100;
+                    var idealBalanceAmt = (totalSum * 0.01m) * wallet.IdealBalance.Value;
+                    if (IsWithin(percentageOfTotal, wallet.IdealBalance.Value - tolerance,
+                        wallet.IdealBalance.Value + tolerance, out var above))
                     {
-                        var balance = walletBalances[wallet.WalletId].Balance;
-                        var percentageOfTotal = (balance / totalSum) * 100;
-                        var idealBalanceAmt = (totalSum * 0.01m) * wallet.IdealBalance.Value;
-                        if (IsWithin(percentageOfTotal, wallet.IdealBalance.Value - tolerance,
-                            wallet.IdealBalance.Value + tolerance, out var above))
-                        {
-                            continue;
-                        }
-
-                        var derivation = await _walletService.GetDerivationsByWalletId(wallet.WalletId);
-                        var destination =
-                            await _explorerClient.GetUnusedAsync(derivation, DerivationFeature.Deposit, 0, true, token);
-                        var transferRequest = new TransferRequest()
-                        {
-                            TransferType = TransferType.Internal,
-                            Timestamp = DateTimeOffset.UtcNow,
-                            Status = TransferStatus.Pending,
-                            Destination = destination.Address.ToString(),
-                            
-                        };
-                        switch (above)
-                        {
-                            case true:
-                                transferRequest.Amount = balance - idealBalanceAmt;
-                                //need to send to replenishment 
-                                break;
-                            case false:
-
-                                transferRequest.Amount = idealBalanceAmt - balance;
-                                //need to receive from replenishment
-                                break;
-                        }
+                        continue;
                     }
+
+                    var transferRequest = new TransferRequest()
+                    {
+                        TransferType = TransferType.Internal,
+                        Timestamp = DateTimeOffset.UtcNow,
+                        Status = TransferStatus.Pending,
+                        
+                    };
+                    DerivationStrategyBase derivation = null;
+                    switch (above)
+                    {
+                        case true:
+                            transferRequest.Amount = balance - idealBalanceAmt;
+                            transferRequest.ToWalletId = wallet.WalletReplenishmentSourceWalletId;
+                            transferRequest.FromWalletId = wallet.WalletId;
+                            derivation = await _walletService.GetDerivationsByWalletId(wallet.WalletId);
+                            //need to send to replenishment 
+                            break;
+                        case false:
+                            transferRequest.Amount = idealBalanceAmt - balance;
+                            transferRequest.ToWalletId = wallet.WalletId;
+                            transferRequest.FromWalletId = wallet.WalletReplenishmentSourceWalletId;
+                            derivation = await _walletService.GetDerivationsByWalletId(wallet.WalletId);
+                            //need to receive from replenishment
+                            break;
+                    }
+                    var destination =
+                        await _explorerClient.GetUnusedAsync(derivation, DerivationFeature.Deposit, 0, true, token);
+                    transferRequest.Destination = destination.Address.ToString();
+                    result.Add(transferRequest);
                 }
             }
+
+            return result;
+
         }
 
         private static bool IsWithin(decimal value, decimal minimum, decimal maximum, out bool? above)
@@ -196,6 +212,12 @@ namespace PrivatePond.Controllers
                                 //keep going, we prioritize withdraws by time but if there is some other we can fit, we should
                             }
                         }
+                        // todo:
+                        // find spent coins, group by wallet id,
+                        // compute change
+                        // compute final balance based on spent coins
+                        // run BalanceWallets and create transfer requests to balance wallets involved.
+                        
 
                         var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
                             .BuildPSBT(false);
@@ -265,9 +287,8 @@ namespace PrivatePond.Controllers
             return Task.CompletedTask;
         }
 
-        public async Task<List<TransferRequestData>> GetTransferRequests(TransferRequestQuery query)
+        private async Task<List<TransferRequest>> GetTransferRequests(PrivatePondDbContext context,TransferRequestQuery query)
         {
-            await using var context = _dbContextFactory.CreateDbContext();
             var queryable = context.TransferRequests.AsQueryable();
 
             if (query.Ids?.Any() is true)
@@ -288,7 +309,13 @@ namespace PrivatePond.Controllers
                     query.TransferTypes.Contains(transaction.TransferType));
             }
 
-            var data = await queryable.ToListAsync();
+            return await queryable.ToListAsync();
+        }
+
+        public async Task<List<TransferRequestData>> GetTransferRequests(TransferRequestQuery query)
+        {
+            await using var context = _dbContextFactory.CreateDbContext();
+            var data = await GetTransferRequests(context, query);
             return data.Select(FromDbModel).ToList();
         }
 

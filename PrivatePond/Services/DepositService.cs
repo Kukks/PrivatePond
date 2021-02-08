@@ -67,6 +67,7 @@ namespace PrivatePond.Controllers
         {
             return new()
             {
+                UserId = NormalizeUserId(request.UserId),
                 WalletId = request.WalletId,
                 Destination = request.Address,
                 Label = request.Id,
@@ -114,11 +115,17 @@ namespace PrivatePond.Controllers
             }
             if (query.UserIds?.Any() is true)
             {
+                query.UserIds = query.UserIds.Select(NormalizeUserId).ToArray();
                 queryable = queryable.Where(transaction =>
                     query.UserIds.Contains(transaction.UserId));
             }
 
             return await queryable.ToListAsync(cancellationToken);
+        }
+
+        private string NormalizeUserId(string userId)
+        {
+            return userId.ToLowerInvariant().Trim();
         }
     }
 }

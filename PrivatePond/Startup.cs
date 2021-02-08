@@ -1,3 +1,4 @@
+using System.IO;
 using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using NBitcoin;
 using PrivatePond.Controllers;
 using PrivatePond.Data;
 using PrivatePond.Data.EF;
@@ -40,6 +42,7 @@ namespace PrivatePond
                         foreach (var optionsWallet in options.Wallets)
                         {
                             optionsWallet.WalletId = null;
+                            optionsWallet.WalletReplenishmentSourceWalletId = null;
                         }
                     });
             services.AddDbContextFactory<PrivatePondDbContext>(builder =>
@@ -51,7 +54,9 @@ namespace PrivatePond
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {
-                c.DescribeAllEnumsAsStrings();
+                var filePath = Path.Combine(System.AppContext.BaseDirectory, "PrivatePond.xml");
+                c.MapType<OutPoint>(() => new OpenApiSchema { Type = "string" });
+                c.IncludeXmlComments(filePath);
                 c.SwaggerDoc("v1", new OpenApiInfo {Title = "PrivatePond", Version = "v1"});
             });
         }
@@ -68,9 +73,7 @@ namespace PrivatePond
     
 
             app.UseRouting();
-
             app.UseAuthorization();
-
             app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
         }
     }

@@ -22,6 +22,7 @@ namespace PrivatePond.Data
     {
         //configured by the application itself
         public string WalletId { get; set; }
+        public string WalletReplenishmentSourceWalletId { get; set; }
         //the derivation scheme in NBX format
         public string DerivationScheme { get; set; }
         //If this wallet can be suggested to users to do deposits

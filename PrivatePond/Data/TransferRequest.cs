@@ -16,5 +16,7 @@ namespace PrivatePond.Data
         public string SigningRequestId { get; set; }
 
         public SigningRequest SigningRequest { get; set; }
+        public string ToWalletId { get; set; }
+        public string FromWalletId { get; set; }
     }
 }

@@ -16,25 +16,27 @@ namespace PrivatePond.Data
 
         //Transfers processed every x minutes
         public int BatchTransfersEvery { get; set; }
+        
+        //the ideal max amount of funds in percentage of the sum of total enabled wallet balances
+        // public decimal? MaximumFunds { get; set; }
+        //the ideal minimum amount of funds in percentage of the sum of total enabled wallet balances
+        public decimal? WalletReplenishmentIdealBalancePercentage { get; set; }
+        //if the min/max is reached, suggest a transfer from/to this wallet
+        public string WalletReplenishmentSource { get; set; }
+        public string WalletReplenishmentSourceWalletId { get; set; }
     }
 
     public class WalletOption
     {
         //configured by the application itself
         public string WalletId { get; set; }
-        public string WalletReplenishmentSourceWalletId { get; set; }
         //the derivation scheme in NBX format
         public string DerivationScheme { get; set; }
         //If this wallet can be suggested to users to do deposits
         public bool AllowForDeposits { get; set; }
         //mandatory keypath needed to create PSBTs for transfers
         public string[] RootedKeyPaths { get; set; }
-        //the ideal max amount of funds in percentage of the sum of total enabled wallet balances
-        // public decimal? MaximumFunds { get; set; }
-        //the ideal minimum amount of funds in percentage of the sum of total enabled wallet balances
-        public decimal? IdealBalance { get; set; }
-        //if the min/max is reached, suggest a transfer from/to this wallet
-        public string WalletReplenishmentSource { get; set; }
+        
 
         public bool AllowForTransfers { get; set; }
 

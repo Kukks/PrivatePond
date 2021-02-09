@@ -125,15 +125,11 @@ namespace PrivatePond.Controllers
                 _logger.LogInformation($"Enabling wallet {wallet.Id}");
             }
 
-            foreach (var walletOption in _options.Value.Wallets)
+            if (_options.Value.WalletReplenishmentIdealBalancePercentage.HasValue &&
+                !string.IsNullOrEmpty(_options.Value.WalletReplenishmentSource))
             {
-                if (string.IsNullOrEmpty(walletOption.WalletReplenishmentSource))
-                {
-                    continue;
-                }
-
-                walletOption.WalletReplenishmentSourceWalletId =
-                    GetWalletId(GetDerivationStrategy(walletOption.DerivationScheme));
+                _options.Value.WalletReplenishmentSourceWalletId =
+                    GetWalletId(GetDerivationStrategy(_options.Value.WalletReplenishmentSource));
             }
 
             var depositRequestsToDeactivate = await dbContext.DepositRequests.Include(request => request.Wallet)

@@ -42,7 +42,6 @@ namespace PrivatePond
                         foreach (var optionsWallet in options.Wallets)
                         {
                             optionsWallet.WalletId = null;
-                            optionsWallet.WalletReplenishmentSourceWalletId = null;
                         }
                     });
             services.AddDbContextFactory<PrivatePondDbContext>(builder =>

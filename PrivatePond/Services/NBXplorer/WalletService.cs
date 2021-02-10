@@ -102,7 +102,25 @@ namespace PrivatePond.Controllers
                 _logger.LogInformation($"Loading wallet {walletOption.DerivationScheme}");
                 var derivationStrategy = GetDerivationStrategy(walletOption.DerivationScheme);
                 var walletId = GetWalletId(derivationStrategy);
-
+                
+                var keys = derivationStrategy.GetExtPubKeys();
+                if (keys.Count() != walletOption.RootedKeyPaths.Length)
+                {
+                    throw new ConfigurationException("Wallets",
+                        "you must configure the rooted key paths for ALL xpubs in ALL wallets");
+                }
+                else
+                {
+                    foreach (var rootedKeyPath in walletOption.RootedKeyPaths)
+                    {
+                       if(!RootedKeyPath.TryParse(rootedKeyPath, out var parsed))
+                       {
+                           
+                           throw new ConfigurationException("Wallets",
+                               $"root key path format is invalid: {rootedKeyPath}");
+                       }
+                    }
+                }
                 WalletIdDerivations.TryAdd(walletId, derivationStrategy);
                 walletOption.WalletId = walletId;
                 loadedWallets.Add(walletId);
@@ -335,10 +353,20 @@ namespace PrivatePond.Controllers
             {
                 return derivScheme;
             }
-            
+
+            try
+            {
+
             var derivationStrategy = _derivationStrategyFactory.Parse(derivationScheme);
             Derivations.Add(derivationScheme, derivationStrategy);
             return derivationStrategy;
+            
+            }
+            catch (FormatException e)
+            {
+                
+                throw new ConfigurationException("Wallets", $"{derivationScheme} invalid: {e.Message}");
+            }
         }
 
         public async Task<DerivationStrategyBase> GetDerivationsByWalletId(string walletId)

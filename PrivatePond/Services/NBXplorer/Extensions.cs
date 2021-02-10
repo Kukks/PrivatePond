@@ -39,6 +39,10 @@ namespace PrivatePond.Services.NBXplorer
                 var cookieFile = nbxOptions.Value.CookieFile;
                 if (string.IsNullOrEmpty(cookieFile?.Trim()) || cookieFile.Trim() == "0" )
                     cookieFile = null;
+                if (nbxOptions.Value.ExplorerUri is null)
+                {
+                    throw new ConfigurationException("NBXPlorer", "NBXplorer connection string not configured");
+                }
                 logger.LogInformation($"Explorer url is {(nbxOptions.Value.ExplorerUri.AbsoluteUri)}");
                 logger.LogInformation($"Cookie file is {(nbxOptions.Value.CookieFile ?? "not set")}");
                 var explorer = nbxNetworkProvider.GetBTC().CreateExplorerClient(nbxOptions.Value.ExplorerUri);

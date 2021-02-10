@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using Microsoft.AspNetCore.Builder;
@@ -43,10 +44,19 @@ namespace PrivatePond
                         {
                             optionsWallet.WalletId = null;
                         }
+
+                        if (options.Wallets?.Any() is not true)
+                        {
+                            throw new ConfigurationException("Wallets", "No wallets were configured");
+                        }
                     });
             services.AddDbContextFactory<PrivatePondDbContext>(builder =>
             {
                 var connString = Configuration.GetConnectionString(PrivatePondDbContext.DatabaseConnectionStringName);
+                if (string.IsNullOrEmpty(connString))
+                {
+                    throw new ConfigurationException("Database", "Connection string not set");
+                }
                 builder.UseNpgsql(connString, optionsBuilder => { optionsBuilder.EnableRetryOnFailure(10); });
             }, ServiceLifetime.Singleton);
             services.AddSingleton<IStartupTask, MigrationStartupTask>();
@@ -74,6 +84,14 @@ namespace PrivatePond
             app.UseRouting();
             app.UseAuthorization();
             app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
+        }
+    }
+
+    public class ConfigurationException : Exception
+    {
+        public ConfigurationException(string code, string message):base(message)
+        {
+            Source = code;
         }
     }
 }

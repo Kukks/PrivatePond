@@ -28,7 +28,7 @@ namespace PrivatePond.Controllers
         {
             await _walletService.WaitUntilWalletsLoaded();
             await using var dbContext = _dbContextFactory.CreateDbContext();
-
+            userId = NormalizeUserId(userId);
             var result = new List<DepositRequestData>();
             var existingActive = await dbContext.DepositRequests.Where(request =>
                 request.UserId == userId && request.Active).ToListAsync();

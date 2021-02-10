@@ -85,7 +85,7 @@ namespace PrivatePond.Services.NBXplorer
                 Error = error
             };
             if (LastSummary is null || LastSummary.Error != summary.Error || LastSummary.State != summary.State)
-                _logger.LogInformation($"summary updated {_explorerClient.CryptoCode}");
+                _logger.LogInformation($"summary updated {_explorerClient.CryptoCode} ({summary.State})");
             LastSummary = summary;
         }
     }

@@ -240,11 +240,12 @@ namespace PrivatePond.Controllers
                             var address = BitcoinAddress.Create(HelperExtensions.GetAddress(transferRequest.Destination,
                                 _network, out _, out _), _network);
                             txBuilder.Send(address, new Money(transferRequest.Amount, MoneyUnit.BTC));
-                            var newFee = txBuilder.EstimateFees(feeRate.FeeRate);
-                            var additionalFee = newFee - fees;
-                            txBuilder.SendFees(additionalFee);
+                           
                             try
                             {
+                                var newFee = txBuilder.EstimateFees(feeRate.FeeRate);
+                                var additionalFee = newFee - fees;
+                                txBuilder.SendFees(additionalFee);
                                 workingTx = txBuilder.BuildTransaction(false);
 
                                 fees = newFee;
@@ -336,11 +337,12 @@ namespace PrivatePond.Controllers
                                     txBuilder = txBuilder
                                         .Send(replenishmentAddress.Address,
                                             new Money(replenishmentAmount, MoneyUnit.BTC));
-                                    var newFee = txBuilder.EstimateFees(feeRate.FeeRate);
-                                    var additionalFee = newFee - fees;
-                                    txBuilder.SendFees(additionalFee);
+                                    
                                     try
                                     {
+                                        var newFee = txBuilder.EstimateFees(feeRate.FeeRate);
+                                        var additionalFee = newFee - fees;
+                                        txBuilder.SendFees(additionalFee);
                                         workingTx = txBuilder.BuildTransaction(false);
                                         var replenishmentTransferRequest = new TransferRequest()
                                         {

@@ -18,6 +18,7 @@ using NBXplorer.Models;
 using Newtonsoft.Json.Converters;
 using PrivatePond.Data;
 using PrivatePond.Data.EF;
+using PrivatePond.Services.NBXplorer;
 
 namespace PrivatePond.Controllers
 {
@@ -28,6 +29,7 @@ namespace PrivatePond.Controllers
         private readonly ExplorerClient _explorerClient;
         private readonly DerivationStrategyFactory _derivationStrategyFactory;
         private readonly ILogger<WalletService> _logger;
+        private readonly NBXplorerSummaryProvider _nbXplorerSummaryProvider;
         private FileSystemWatcher _fileSystemWatcher;
         private IDataProtector _protector;
         private Dictionary<string, bool> HotWallet = new();
@@ -44,13 +46,14 @@ namespace PrivatePond.Controllers
             ExplorerClient explorerClient,
             IDataProtectionProvider dataProtectionProvider,
             DerivationStrategyFactory derivationStrategyFactory,
-            ILogger<WalletService> logger)
+            ILogger<WalletService> logger, NBXplorerSummaryProvider nbXplorerSummaryProvider)
         {
             _options = options;
             _dbContextFactory = dbContextFactory;
             _explorerClient = explorerClient;
             _derivationStrategyFactory = derivationStrategyFactory;
             _logger = logger;
+            _nbXplorerSummaryProvider = nbXplorerSummaryProvider;
             _protector = dataProtectionProvider.CreateProtector("wallet");
         }
 
@@ -67,8 +70,28 @@ namespace PrivatePond.Controllers
             return BitConverter.ToString(hash).Replace("-", String.Empty);
         }
 
-        public async Task StartAsync(CancellationToken cancellationToken)
+        public Task StartAsync(CancellationToken cancellationToken)
         {
+            _ = ConfigureWallets(cancellationToken);
+            return Task.CompletedTask;
+        }
+        private async Task ConfigureWallets(CancellationToken cancellationToken)
+        {
+            var first = true;
+            while (! cancellationToken.IsCancellationRequested  && (_nbXplorerSummaryProvider.LastSummary is null || _nbXplorerSummaryProvider.LastSummary.State == NBXplorerState.NotConnected))
+            {
+                if(first)
+                _logger.LogInformation("Waiting to connect to NBXplorer");
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                first = false;
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            
+            _logger.LogInformation("Configuring wallets");
             if (!string.IsNullOrEmpty(_options.Value.KeysDir))
             {
                 var keysDir = Directory.CreateDirectory(_options.Value.KeysDir);

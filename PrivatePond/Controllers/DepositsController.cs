@@ -29,10 +29,10 @@ namespace PrivatePond.Controllers
         }
         
         /// <summary>
-        /// Get or generate deposit requests for suer 
+        /// Get or generate deposit requests for user 
         /// </summary>
         /// <remarks>Fetches active deposit requests for a user. If there are no active ones, they will be generated.</remarks>
-        /// <param name="userId">The user id. It is normalized buy lowercased and preceding and trailing white spaces trimmed.</param>
+        /// <param name="userId">The user id. It is normalized by lowercased and preceding and trailing white spaces trimmed.</param>
         /// <returns>A list of deposit requests available for the user. Sorted based on order in config.</returns>
         [HttpGet("users/{userId}")]
         public async Task<ActionResult<List<DepositRequestData>>> GetUserDepositRequest(string userId)
@@ -46,10 +46,10 @@ namespace PrivatePond.Controllers
             return result;
         }
         /// <summary>
-        /// Get or deposit request history for suer 
+        /// Get or deposit request history for user 
         /// </summary>
         /// <remarks>Fetches all deposit requests for a user.</remarks>
-        /// <param name="userId">The user id. It is normalized buy lowercased and preceding and trailing white spaces trimmed.</param>
+        /// <param name="userId">The user id. It is normalized by lowercased and preceding and trailing white spaces trimmed.</param>
         /// <returns>A list of deposit requests of the user. Sorted based on creation date in descending order.</returns>
         [HttpGet("users/{userId}/history")]
         public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequestHistory(string userId)

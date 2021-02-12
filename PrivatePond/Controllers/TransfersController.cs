@@ -19,14 +19,23 @@ namespace PrivatePond.Controllers
             _transferRequestService = transferRequestService;
             _network = network;
         }
-        
-        
+
+        /// <summary>
+        /// Get Transfer requests
+        /// </summary>
+        /// <param name="query"></param>
+        /// <returns></returns>
         [HttpGet("")]
         public async Task<ActionResult<List<TransferRequestData>>> GetTransferRequests(TransferRequestQuery query)
         {
             return Ok(await _transferRequestService.GetTransferRequests(query));
         }
 
+        /// <summary>
+        /// Create a transfer request
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns>The created request</returns>
         [HttpPost("")]
         public async Task<ActionResult<TransferRequestData>> RequestTransfer(RequestTransferRequest request)
         {
@@ -40,15 +49,18 @@ namespace PrivatePond.Controllers
 
                     if (bip21Amount.HasValue && request.Amount.HasValue && request.Amount != bip21Amount.Value)
                     {
-                        ModelState.AddModelError((RequestTransferRequest x)=> x.Amount, "An amount was specified for this transfer but the destination is a payment link with a different amount");
-                    }else if (bip21Amount.HasValue)
+                        ModelState.AddModelError((RequestTransferRequest x) => x.Amount,
+                            "An amount was specified for this transfer but the destination is a payment link with a different amount");
+                    }
+                    else if (bip21Amount.HasValue)
                     {
                         request.Amount = bip21Amount;
                     }
                 }
                 catch (Exception e)
                 {
-                    ModelState.AddModelError((RequestTransferRequest x)=> x.Destination, "Destination was invalid. It must be a bitcoin address or a BIP21 payment link");
+                    ModelState.AddModelError((RequestTransferRequest x) => x.Destination,
+                        "Destination was invalid. It must be a bitcoin address or a BIP21 payment link");
                 }
             }
 
@@ -59,10 +71,14 @@ namespace PrivatePond.Controllers
 
             return Ok(await _transferRequestService.CreateTransferRequest(request));
         }
-        
 
+        /// <summary>
+        /// Get a transfer request
+        /// </summary>
+        /// <param name="transferRequestId">the specific transfer request Id</param>
+        /// <returns></returns>
         [HttpGet("{transferRequestId}")]
-        public async Task<ActionResult<DepositRequestData>> GetTransferRequestId(string transferRequestId)
+        public async Task<ActionResult<TransferRequestData>> GetTransferRequestId(string transferRequestId)
         {
             var result = await _transferRequestService.GetTransferRequests(new TransferRequestQuery()
             {

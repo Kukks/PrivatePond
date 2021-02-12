@@ -5,7 +5,7 @@ namespace PrivatePond.Controllers
         /// <summary>
         /// list of wallet ids to filter with
         /// </summary>
-        public string[] Ids { get; set; }
+        public string[] Ids { get; set; } = null;
         /// <summary>
         /// filter based on wallets being enabled/disabled. Leave blank for both
         /// </summary>

@@ -25,7 +25,8 @@ namespace PrivatePond.Services.NBXplorer
         private readonly TransferRequestService _transferRequestService;
 
         public NBXplorerListener(ExplorerClient explorerClient, NBXplorerSummaryProvider nbXplorerSummaryProvider,
-            ILogger<NBXplorerListener> logger, WalletService walletService, IOptions<PrivatePondOptions> options, DepositService depositService, TransferRequestService transferRequestService)
+            ILogger<NBXplorerListener> logger, WalletService walletService, IOptions<PrivatePondOptions> options,
+            DepositService depositService, TransferRequestService transferRequestService)
         {
             _explorerClient = explorerClient;
             _nbXplorerSummaryProvider = nbXplorerSummaryProvider;
@@ -99,7 +100,7 @@ namespace PrivatePond.Services.NBXplorer
                                         new WalletTransactionQuery()
                                         {
                                             WalletIds = new[] {walletId},
-                                            Ids = depositIdToOutput.Keys.ToArray()
+                                            Ids = depositIdToOutput.Select(pair => new OutPoint(txEvent.TransactionData.TransactionHash, pair.Value.Index).ToString()).ToArray()
                                         }, cancellationToken);
                                     foreach (var unmatchedWalletTransaction in unmatchedWalletTransactions)
                                     {
@@ -115,6 +116,11 @@ namespace PrivatePond.Services.NBXplorer
                                     {
                                         var outpoint = new OutPoint(txEvent.TransactionData.TransactionHash,
                                             keyValuePair.Value.Index);
+                                        if (unmatchedWalletTransactions.Any(transaction =>
+                                            transaction.Id == outpoint.ToString()))
+                                        {
+                                            continue;
+                                        }
                                         var newWalletTransaction = new WalletTransaction()
                                         {
                                             OutPoint = outpoint,
@@ -341,9 +347,8 @@ namespace PrivatePond.Services.NBXplorer
 
             if (completedTransferRequestIds.Any())
             {
-               await _transferRequestService.MarkCompleted(completedTransferRequestIds);
+                await _transferRequestService.MarkCompleted(completedTransferRequestIds);
             }
-            
         }
 
         private bool UpdateWalletTransactionFromTransactionResult(WalletTransaction walletTransaction,
@@ -356,10 +361,8 @@ namespace PrivatePond.Services.NBXplorer
             walletTransaction.BlockHeight = transactionResult.Height;
             walletTransaction.Status = walletTransaction.Confirmations >= _options.Value.MinimumConfirmations
                 ? walletTransaction.InactiveDepositRequest
-                    ?
-                    WalletTransaction.WalletTransactionStatus.RequiresApproval
-                    :
-                    WalletTransaction.WalletTransactionStatus.Confirmed
+                    ? WalletTransaction.WalletTransactionStatus.RequiresApproval
+                    : WalletTransaction.WalletTransactionStatus.Confirmed
                 : walletTransaction.Status == WalletTransaction.WalletTransactionStatus.Confirmed
                     ? WalletTransaction.WalletTransactionStatus.Confirmed
                     : WalletTransaction.WalletTransactionStatus.AwaitingConfirmation;

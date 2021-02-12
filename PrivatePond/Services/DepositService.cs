@@ -96,7 +96,7 @@ namespace PrivatePond.Controllers
                 queryable = queryable.Include(request => request.WalletTransactions);
             }
 
-            if (query.WalletIds?.Any() is true)
+            if (query.WalletIds is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.WalletIds.Contains(transaction.WalletId));
@@ -108,12 +108,13 @@ namespace PrivatePond.Controllers
                     query.Active == transaction.Active);
             }
 
-            if (query.Ids?.Any() is true)
+            if (query.Ids is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.Ids.Contains(transaction.Id));
             }
-            if (query.UserIds?.Any() is true)
+
+            if (query.UserIds is not null)
             {
                 query.UserIds = query.UserIds.Select(NormalizeUserId).ToArray();
                 queryable = queryable.Where(transaction =>

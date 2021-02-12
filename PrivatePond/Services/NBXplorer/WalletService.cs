@@ -255,19 +255,19 @@ namespace PrivatePond.Controllers
                 queryable = queryable.Include(request => request.Wallet);
             }
 
-            if (query.Statuses?.Any() is true)
+            if (query.Statuses is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.Statuses.Contains(transaction.Status));
             }
 
-            if (query.Ids?.Any() is true)
+            if (query.Ids is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.Ids.Contains(transaction.Id));
             }
 
-            if (query.WalletIds?.Any() is true)
+            if (query.WalletIds is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.WalletIds.Contains(transaction.WalletId));
@@ -437,7 +437,7 @@ namespace PrivatePond.Controllers
         {
             await using var dbContext = _dbContextFactory.CreateDbContext();
             var queryable = dbContext.Wallets.AsQueryable();
-            if (query.Ids?.Any() is true)
+            if (query.Ids is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.Ids.Contains(transaction.Id));

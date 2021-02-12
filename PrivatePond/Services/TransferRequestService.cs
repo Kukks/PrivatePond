@@ -524,19 +524,19 @@ namespace PrivatePond.Controllers
         {
             var queryable = context.TransferRequests.AsQueryable();
 
-            if (query.Ids?.Any() is true)
+            if (query.Ids is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.Ids.Contains(transaction.Id));
             }
 
-            if (query.Statuses?.Any() is true)
+            if (query.Statuses is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.Statuses.Contains(transaction.Status));
             }
 
-            if (query.TransferTypes?.Any() is true)
+            if (query.TransferTypes is not null)
             {
                 queryable = queryable.Where(transaction =>
                     query.TransferTypes.Contains(transaction.TransferType));

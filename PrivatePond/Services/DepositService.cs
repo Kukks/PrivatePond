@@ -32,8 +32,8 @@ namespace PrivatePond.Controllers
             var result = new List<DepositRequestData>();
             var existingActive = await dbContext.DepositRequests.Where(request =>
                 request.UserId == userId && request.Active).ToListAsync();
-            var depositActivatedWallets=  _options.Value.Wallets.Where(option => option.AllowForDeposits).ToList();
-            var walletsToRequestDepositDetails = depositActivatedWallets.Where(option => 
+            var depositActivatedWallets = _options.Value.Wallets.Where(option => option.AllowForDeposits).ToList();
+            var walletsToRequestDepositDetails = depositActivatedWallets.Where(option =>
                 !existingActive.Exists(request => request.WalletId == option.WalletId)).ToList();
             result.AddRange(existingActive.Select(FromDbModel));
             foreach (var walletToRequestDepositDetail in walletsToRequestDepositDetails)
@@ -60,7 +60,8 @@ namespace PrivatePond.Controllers
 
             await dbContext.SaveChangesAsync();
             //sort them before returning
-            return depositActivatedWallets.Select(wallet => result.Single(data => data.WalletId == wallet.WalletId)).ToList();
+            return depositActivatedWallets.Select(wallet => result.Single(data => data.WalletId == wallet.WalletId))
+                .ToList();
         }
 
         private DepositRequestData FromDbModel(DepositRequest request)
@@ -82,11 +83,10 @@ namespace PrivatePond.Controllers
                     })?.ToList()
             };
         }
-        
+
         public async Task<List<DepositRequest>> GetDepositRequests(DepositRequestQuery query,
             CancellationToken cancellationToken)
         {
-            
             await _walletService.WaitUntilWalletsLoaded();
             await using var dbContext = _dbContextFactory.CreateDbContext();
 

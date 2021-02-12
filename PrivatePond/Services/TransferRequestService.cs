@@ -1,11 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Security.Cryptography.Xml;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -71,67 +68,6 @@ namespace PrivatePond.Controllers
                 .ToListAsync(cancellationToken: cancellationToken);
             signingRequests.ForEach(request => request.Status = SigningRequest.SigningRequestStatus.Expired);
         }
-
-        //
-        // private async Task<List<TransferRequest>> BalanceWallets(Dictionary<string, decimal> walletBalances,CancellationToken token)
-        // {
-        //     var totalSum = walletBalances.Sum(data => data.Value);
-        //     if (totalSum == 0)
-        //     {
-        //         return new List<TransferRequest>();
-        //     }
-        //
-        //     var result = new List<TransferRequest>();
-        //     // we can never be 100% accurate to the desired ratios. Allow a variation of specified percentage 
-        //     var tolerance = 2;
-        //     foreach (var wallet in _options.Value.Wallets)
-        //     {
-        //         if (wallet.IdealBalance.HasValue && wallet.WalletReplenishmentSource != null)
-        //         {
-        //             var balance = walletBalances[wallet.WalletId];
-        //             var percentageOfTotal = (balance / totalSum) * 100;
-        //             var idealBalanceAmt = (totalSum * 0.01m) * wallet.IdealBalance.Value;
-        //             if (IsWithin(percentageOfTotal, wallet.IdealBalance.Value - tolerance,
-        //                 wallet.IdealBalance.Value + tolerance, out var above))
-        //             {
-        //                 continue;
-        //             }
-        //
-        //             var transferRequest = new TransferRequest()
-        //             {
-        //                 TransferType = TransferType.Internal,
-        //                 Timestamp = DateTimeOffset.UtcNow,
-        //                 Status = TransferStatus.Pending,
-        //                 
-        //             };
-        //             DerivationStrategyBase derivation = null;
-        //             switch (above)
-        //             {
-        //                 case true:
-        //                     transferRequest.Amount = balance - idealBalanceAmt;
-        //                     transferRequest.ToWalletId = wallet.WalletReplenishmentSourceWalletId;
-        //                     transferRequest.FromWalletId = wallet.WalletId;
-        //                     derivation = await _walletService.GetDerivationsByWalletId(wallet.WalletId);
-        //                     //need to send to replenishment 
-        //                     break;
-        //                 case false:
-        //                     transferRequest.Amount = idealBalanceAmt - balance;
-        //                     transferRequest.ToWalletId = wallet.WalletId;
-        //                     transferRequest.FromWalletId = wallet.WalletReplenishmentSourceWalletId;
-        //                     derivation = await _walletService.GetDerivationsByWalletId(wallet.WalletId);
-        //                     //need to receive from replenishment
-        //                     break;
-        //             }
-        //             var destination =
-        //                 await _explorerClient.GetUnusedAsync(derivation, DerivationFeature.Deposit, 0, true, token);
-        //             transferRequest.Destination = destination.Address.ToString();
-        //             result.Add(transferRequest);
-        //         }
-        //     }
-        //
-        //     return result;
-        //
-        // }
 
         private (decimal Amount, bool Above)? HandleReplenishmentRequests(Dictionary<string, decimal> walletBalances,
             CancellationToken cancellationToken)
@@ -213,7 +149,7 @@ namespace PrivatePond.Controllers
 
                         var walletUtxos = hotWalletTasks.Keys.ToDictionary(s => s,
                             s => _explorerClient.GetUTXOsAsync(hotWalletDerivationSchemes[s].Result, token)
-                                .ContinueWith(task => task.Result.GetUnspentCoins(_options.Value.MinimumConfirmations),
+                                .ContinueWith(task => task.Result.GetUnspentCoins(),
                                     token));
 
                         await Task.WhenAll(walletUtxos.Values);
@@ -227,47 +163,59 @@ namespace PrivatePond.Controllers
                         var changeAddress = await _explorerClient.GetUnusedAsync(
                             hotWalletDerivationSchemes.First().Value.Result, DerivationFeature.Change, 0, true,
                             token);
-                        Money fees = Money.Zero;
+                        decimal? failedAmount = null;
                         foreach (var transferRequest in transferRequests)
                         {
+                            if (failedAmount.HasValue && transferRequest.Amount >= failedAmount)
+                            {
+                                continue;
+                            }
+
                             var txBuilder = _network.CreateTransactionBuilder().AddCoins(coins);
-                            txBuilder.SetChange(changeAddress.Address);
+
                             if (workingTx is not null)
                             {
-                                txBuilder = txBuilder.ContinueToBuild(workingTx);
+                                foreach (var txout in workingTx.Outputs.Where(txout =>
+                                    !txout.IsTo(changeAddress.Address)))
+                                {
+                                    txBuilder.Send(txout.ScriptPubKey, txout.Value);
+                                }
                             }
 
                             var address = BitcoinAddress.Create(HelperExtensions.GetAddress(transferRequest.Destination,
                                 _network, out _, out _), _network);
                             txBuilder.Send(address, new Money(transferRequest.Amount, MoneyUnit.BTC));
-                           
+
                             try
                             {
-                                var newFee = txBuilder.EstimateFees(feeRate.FeeRate);
-                                var additionalFee = newFee - fees;
-                                txBuilder.SendFees(additionalFee);
+                                txBuilder.SetChange(changeAddress.Address);
+                                txBuilder.SendEstimatedFees(feeRate.FeeRate);
                                 workingTx = txBuilder.BuildTransaction(false);
-
-                                fees = newFee;
                                 transfersProcessing.Add(transferRequest);
                             }
                             catch (NotEnoughFundsException e)
                             {
+                                failedAmount = transferRequest.Amount;
                                 //keep going, we prioritize withdraws by time but if there is some other we can fit, we should
                             }
                         }
 
-                        var spentCoinsByWallet = _network.CreateTransactionBuilder().AddCoins(coins)
-                            .ContinueToBuild(workingTx).FindSpentCoins(workingTx).GroupBy(spentCoin => walletUtxos
-                                .Single(pair => pair.Value.Result.Any(coin => spentCoin.Outpoint == coin.Outpoint))
-                                .Key);
-                        // todo:
+                        var spentCoinsByWallet =
+                            workingTx is null
+                                ? new IGrouping<string, ICoin>[0]
+                                : _network.CreateTransactionBuilder().AddCoins(coins)
+                                    .ContinueToBuild(workingTx).FindSpentCoins(workingTx).GroupBy(spentCoin =>
+                                        walletUtxos
+                                            .Single(pair =>
+                                                pair.Value.Result.Any(coin => spentCoin.Outpoint == coin.Outpoint))
+                                            .Key);
                         // find spent coins, group by wallet id,
                         var balanceChangePerWallet = spentCoinsByWallet.ToDictionary(grouping => grouping.Key,
                             grouping => Money.Satoshis(grouping.Sum(coin => coin.Amount as Money))
                                 .ToDecimal(MoneyUnit.BTC));
                         // compute change
-                        var changeOutputs = workingTx.Outputs.Where(txOut => txOut.IsTo(changeAddress.Address));
+                        var changeOutputs = workingTx?.Outputs?.Where(txOut => txOut.IsTo(changeAddress.Address)) ??
+                                            new List<TxOut>();
                         var changeAmount = Money.Satoshis(changeOutputs
                             .Sum(txOut => txOut.Value)).ToDecimal(MoneyUnit.BTC);
                         // compute final balance based on spent coins
@@ -291,161 +239,120 @@ namespace PrivatePond.Controllers
                             }
                         }
 
-                        var replenishmentRequest = HandleReplenishmentRequests(balancesAfter, token);
 
-                        if (replenishmentRequest.HasValue)
+                        workingTx = (await HandleReplenishment(token, changeAmount, changeOutputs, balancesAfter,
+                            hotWalletTasks, coins, changeAddress, feeRate, context, transfersProcessing,
+                            hotWalletDerivationSchemes, workingTx)) ?? workingTx;
+
+                        if (workingTx is not null)
                         {
-                            //replenishment wallet is below threshold
-                            if (!replenishmentRequest.Value.Above)
+                            var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
+                                .BuildPSBT(false);
+                            foreach (var hotWalletDerivationScheme in hotWalletDerivationSchemes)
                             {
-                                var replenishmentAddress = await _explorerClient.GetUnusedAsync(
-                                    await _walletService.GetDerivationsByWalletId(_options.Value
-                                        .WalletReplenishmentSourceWalletId), DerivationFeature.Deposit, 0, true, token);
-                                //if the change is enough, let's keep it simple and just redirect it to the replenishment wallet only
-                                if (IsWithin(changeAmount, replenishmentRequest.Value.Amount * 0.98m,
-                                    replenishmentRequest.Value.Amount * 1.02m, out _))
+                                var walletOption = _options.Value.Wallets.Single(option =>
+                                    option.WalletId == hotWalletDerivationScheme.Key);
+                                var res = await _explorerClient.UpdatePSBTAsync(new UpdatePSBTRequest()
                                 {
-                                    foreach (var changeOutput in changeOutputs)
-                                    {
-                                        changeOutput.ScriptPubKey = replenishmentAddress.ScriptPubKey;
-                                    }
-                                }
-                                else
-                                {
-                                    //if it's too different, let's remove the change from the tx, add more coins and build the tx again
-                                    var withoutChange = workingTx.Outputs.Except(changeOutputs);
-                                    var txWithReplenishment = workingTx.Clone();
-                                    txWithReplenishment.Outputs.Clear();
-                                    txWithReplenishment.Outputs.AddRange(withoutChange);
-
-                                    //how much can we send? 
-                                    //the base is obviously the actual amount needed to fit within quota 
-                                    var replenishmentAmount = replenishmentRequest.Value.Amount;
-                                    //but if not all wallets are hot wallets, then we can only move funds based on those balances.
-                                    var hotWalletTotalBalance = balancesAfter
-                                                                    .Where(pair =>
-                                                                        hotWalletTasks.Keys.Contains(pair.Key))
-                                                                    .Sum(pair => pair.Value) +
-                                                                changeAmount;
-                                    replenishmentAmount = Math.Min(replenishmentAmount, hotWalletTotalBalance);
-
-
-                                    var txBuilder =
-                                        _network.CreateTransactionBuilder().AddCoins(coins)
-                                            .ContinueToBuild(txWithReplenishment);
-
-                                    txBuilder = txBuilder
-                                        .Send(replenishmentAddress.Address,
-                                            new Money(replenishmentAmount, MoneyUnit.BTC));
-                                    
-                                    try
-                                    {
-                                        var newFee = txBuilder.EstimateFees(feeRate.FeeRate);
-                                        var additionalFee = newFee - fees;
-                                        txBuilder.SendFees(additionalFee);
-                                        workingTx = txBuilder.BuildTransaction(false);
-                                        var replenishmentTransferRequest = new TransferRequest()
+                                    DerivationScheme = hotWalletDerivationScheme.Value.Result,
+                                    IncludeGlobalXPub = true,
+                                    PSBT = psbt,
+                                    RebaseKeyPaths = walletOption.RootedKeyPaths.Select((s, i) =>
+                                        new PSBTRebaseKeyRules()
                                         {
-                                            Amount = replenishmentAmount,
-                                            Status = TransferStatus.Pending,
-                                            Timestamp = DateTimeOffset.UtcNow,
-                                            Destination = replenishmentAddress.Address.ToString(),
-                                            ToWalletId = _options.Value
-                                                .WalletReplenishmentSourceWalletId,
-                                            TransferType = TransferType.Internal
-                                        };
-                                        await context.AddAsync(replenishmentTransferRequest, token);
-                                        transfersProcessing.Add(replenishmentTransferRequest);
-                                    }
-                                    catch (NotEnoughFundsException e)
-                                    {
-                                    }
-                                }
+                                            AccountKey = new BitcoinExtPubKey(
+                                                hotWalletDerivationScheme.Value.Result.GetExtPubKeys().ElementAt(i),
+                                                _network),
+                                            AccountKeyPath = RootedKeyPath.Parse(s)
+                                        }).ToList()
+                                }, token);
+                                psbt = res.PSBT;
+                            }
+
+                            var signedPsbt =
+                                await _walletService.SignWithHotWallets(hotWalletDerivationSchemes.Keys.ToArray(),
+                                    psbt);
+                            signedPsbt.Finalize();
+                            var tx = signedPsbt.ExtractTransaction();
+                            var txId = tx.GetHash().ToString();
+                            var timestamp = DateTimeOffset.UtcNow;
+                            var signedPsbtBase64 = signedPsbt.ToBase64();
+                            await context.SigningRequests.AddAsync(new SigningRequest()
+                            {
+                                Id = txId,
+                                Status = SigningRequest.SigningRequestStatus.Signed,
+                                PSBT = psbt.ToBase64(),
+                                FinalPSBT = signedPsbtBase64,
+                                Timestamp = timestamp,
+                                RequiredSignatures = 0
+                            }, token);
+                            foreach (var transferRequest in transfersProcessing)
+                            {
+                                transferRequest.Status = TransferStatus.Processing;
+                                transferRequest.SigningRequestId = txId;
+                            }
+
+                            var result = await _explorerClient.BroadcastAsync(tx, token);
+                            if (!result.Success)
+                            {
+                                _logger.LogError(
+                                    $"Error trying to do automated transfer with hot wallet(s). Node response: {result.RPCCodeMessage}");
                             }
                             else
                             {
-                                //replenishment wallet is overflowing, let's create a request to transfer from replenishment to hot wallets.
-                                balancesAfter[hotWalletDerivationSchemes.First().Key] =
-                                    balancesAfter[hotWalletDerivationSchemes.First().Key] + changeAmount;
-                                if (balancesAfter.ContainsKey("change"))
-                                {
-                                    balancesAfter.Remove("change");
-                                }
+                                _logger.LogInformation(
+                                    $"Automated transfer broadcasted tx {txId} fulfilling {transfersProcessing.Count} requests");
 
-                                var replenishmentWallet =
-                                    await _walletService.GetDerivationsByWalletId(_options.Value
-                                        .WalletReplenishmentSourceWalletId);
-                                var walletOption = _options.Value.Wallets.Single(option => option.WalletId == _options
-                                    .Value
-                                    .WalletReplenishmentSourceWalletId);
-                                var walletsToReplenish = balancesAfter.Where(pair =>
-                                    pair.Key != _options.Value.WalletReplenishmentSourceWalletId);
-
-                                var totalParts = walletsToReplenish.Sum(pair => pair.Value);
-                                var onePartValue = replenishmentRequest.Value.Amount / totalParts;
-                                var replenishmentAmounts =
-                                    walletsToReplenish.ToDictionary(pair => pair.Key,
-                                        pair => pair.Value * onePartValue);
-                                var replenishmentAddresses = walletsToReplenish.ToDictionary(pair => pair.Key,
-                                    pair => _walletService.GetDerivationsByWalletId(pair.Key)
-                                        .ContinueWith(
-                                            task => _explorerClient.GetUnusedAsync(task.Result,
-                                                DerivationFeature.Deposit,
-                                                0, true, token), token));
-                                await Task.WhenAll(replenishmentAddresses.Values);
-                                var replenishmentpsbt = await _explorerClient.CreatePSBTAsync(replenishmentWallet,
-                                    new CreatePSBTRequest()
-                                    {
-                                        Destinations = replenishmentAddresses.Select(pair => new CreatePSBTDestination()
-                                        {
-                                            Destination = pair.Value.Result.Result.Address,
-                                            Amount = new Money(replenishmentAmounts[pair.Key], MoneyUnit.BTC)
-                                        }).ToList(),
-                                        FeePreference = new FeePreference()
-                                        {
-                                            ExplicitFeeRate = feeRate.FeeRate
-                                        },
-                                        IncludeGlobalXPub = true,
-                                        AlwaysIncludeNonWitnessUTXO = true,
-                                        RebaseKeyPaths = walletOption.RootedKeyPaths.Select((s, i) =>
-                                            new PSBTRebaseKeyRules()
-                                            {
-                                                AccountKey = new BitcoinExtPubKey(
-                                                    replenishmentWallet.GetExtPubKeys().ElementAt(i), _network),
-                                                AccountKeyPath = RootedKeyPath.Parse(s)
-                                            }).ToList()
-                                    }, token);
-
-                                var signingRequest = new SigningRequest()
-                                {
-                                    Status = SigningRequest.SigningRequestStatus.Pending,
-                                    Timestamp = DateTimeOffset.UtcNow,
-                                    WalletId = _options.Value
-                                        .WalletReplenishmentSourceWalletId,
-                                    RequiredSignatures = replenishmentWallet.GetExtPubKeys().Count() == 1
-                                        ? 1
-                                        : int.Parse(replenishmentWallet.ToString().Split("-").First()),
-                                    PSBT = replenishmentpsbt.PSBT.ToBase64()
-                                };
-                                await context.AddAsync(signingRequest, token);
-                                foreach (var replenishmentAmount in replenishmentAmounts)
-                                {
-                                    await context.TransferRequests.AddAsync(new TransferRequest()
-                                    {
-                                        Amount = replenishmentAmount.Value,
-                                        ToWalletId = replenishmentAmount.Key,
-                                        Destination = replenishmentAddresses[replenishmentAmount.Key].Result.Result
-                                            .Address.ToString(),
-                                        Status = TransferStatus.Pending,
-                                        SigningRequestId = signingRequest.Id,
-                                        Timestamp = DateTimeOffset.UtcNow,
-                                        TransferType = TransferType.Internal,
-                                        FromWalletId = _options.Value.WalletReplenishmentSourceWalletId
-                                    }, token);
-                                }
+                                await context.SaveChangesAsync(token);
                             }
                         }
+                    }
+                    else
+                    {
+                        // no transfer requests, we should see if we need to do any replenishments
 
+
+                        var walletBalances = await _walletService.GetWallets(new WalletQuery()
+                        {
+                            Enabled = true
+                        }).ContinueWith(task => task.Result.ToDictionary(data => data.Id, data => data.Balance), token);
+
+
+                        var replenishmentRequest = HandleReplenishmentRequests(walletBalances, token);
+                        if (!replenishmentRequest.HasValue)
+                        {
+                            goto delay;
+                        }
+
+                        var allowed = _options.Value.Wallets.Where(option => option.AllowForTransfers).ToList();
+                        var hotWalletTasks = allowed.ToDictionary(option => option.WalletId,
+                            option => _walletService.IsHotWallet(option.WalletId));
+                        await Task.WhenAll(hotWalletTasks.Values);
+                        hotWalletTasks = hotWalletTasks.Where(pair => pair.Value.Result)
+                            .ToDictionary(pair => pair.Key, pair => pair.Value);
+
+                        var hotWalletDerivationSchemes =
+                            hotWalletTasks.ToDictionary(s => s.Key,
+                                s => _walletService.GetDerivationsByWalletId(s.Key));
+                        await Task.WhenAll(hotWalletDerivationSchemes.Values);
+
+                        var walletUtxos = hotWalletTasks.Keys.ToDictionary(s => s,
+                            s => _explorerClient.GetUTXOsAsync(hotWalletDerivationSchemes[s].Result, token)
+                                .ContinueWith(task => task.Result.GetUnspentCoins(),
+                                    token));
+
+                        await Task.WhenAll(walletUtxos.Values);
+                        var coins = walletUtxos.Values.SelectMany(task => task.Result).ToArray();
+
+                        var changeAddress = await _explorerClient.GetUnusedAsync(
+                            hotWalletDerivationSchemes.First().Value.Result, DerivationFeature.Change, 0, true,
+                            token);
+
+                        var feeRate = await _explorerClient.GetFeeRateAsync(1, new FeeRate(20m), token);
+                        var transfersProcessing = new List<TransferRequest>();
+                        var workingTx = (await HandleReplenishment(token, 0m, new TxOut[0], walletBalances,
+                            hotWalletTasks, coins, changeAddress, feeRate, context,
+                            transfersProcessing, hotWalletDerivationSchemes, null));
 
                         var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
                             .BuildPSBT(false);
@@ -510,8 +417,193 @@ namespace PrivatePond.Controllers
                     _logger.LogError(e, "Error when attempting to process automated transfers");
                 }
 
+                delay:
                 await Task.Delay(TimeSpan.FromMinutes(_options.Value.BatchTransfersEvery), token);
             }
+        }
+
+
+        private async Task<Transaction> HandleReplenishment(CancellationToken token,
+            decimal changeAmount, IEnumerable<TxOut> changeOutputs, Dictionary<string, decimal> walletBalances,
+            Dictionary<string, Task<bool>> hotWalletTasks,
+            IEnumerable<Coin> coins, KeyPathInformation changeAddress, GetFeeRateResult feeRate,
+            PrivatePondDbContext context, List<TransferRequest> transfersProcessing,
+            Dictionary<string, Task<DerivationStrategyBase>> hotWalletDerivationSchemes,
+            Transaction workingTx)
+        {
+            var replenishmentRequest = HandleReplenishmentRequests(walletBalances, token);
+            if (replenishmentRequest.HasValue)
+            {
+                //replenishment wallet is below threshold
+                if (!replenishmentRequest.Value.Above)
+                {
+                    var replenishmentAddress = await _explorerClient.GetUnusedAsync(
+                        await _walletService.GetDerivationsByWalletId(_options.Value
+                            .WalletReplenishmentSourceWalletId), DerivationFeature.Deposit, 0, true, token);
+                    //if the change is enough, let's keep it simple and just redirect it to the replenishment wallet only
+                    if (IsWithin(changeAmount, replenishmentRequest.Value.Amount * 0.98m,
+                        replenishmentRequest.Value.Amount * 1.02m, out _))
+                    {
+                        foreach (var changeOutput in changeOutputs)
+                        {
+                            changeOutput.ScriptPubKey = replenishmentAddress.ScriptPubKey;
+                        }
+                    }
+                    else
+                    {
+                        //if it's too different, let's remove the change from the tx, add more coins and build the tx again
+                        Transaction txWithReplenishment = null;
+                        if (workingTx is not null)
+                        {
+                            txWithReplenishment = RemoveChangeOutputs(changeOutputs, workingTx);
+                        }
+
+                        //how much can we send? 
+                        //the base is obviously the actual amount needed to fit within quota 
+                        var replenishmentAmount = replenishmentRequest.Value.Amount;
+                        //but if not all wallets are hot wallets, then we can only move funds based on those balances.
+                        var hotWalletTotalBalance = walletBalances
+                                                        .Where(pair =>
+                                                            hotWalletTasks.Keys.Contains(pair.Key))
+                                                        .Sum(pair => pair.Value) +
+                                                    changeAmount;
+                        replenishmentAmount = Math.Min(replenishmentAmount, hotWalletTotalBalance);
+
+
+                        var txBuilder =
+                            _network.CreateTransactionBuilder().AddCoins(coins);
+
+                        if (txWithReplenishment is not null)
+                        {
+                            foreach (var txout in workingTx.Outputs)
+                            {
+                                txBuilder.Send(txout.ScriptPubKey, txout.Value);
+                            }
+                        }
+
+                        txBuilder = txBuilder
+                            .Send(replenishmentAddress.Address,
+                                new Money(replenishmentAmount, MoneyUnit.BTC));
+
+                        try
+                        {
+                            txBuilder.SetChange(changeAddress.Address);
+                            txBuilder.SendEstimatedFees(feeRate.FeeRate);
+                            workingTx = txBuilder.BuildTransaction(false);
+                            var replenishmentTransferRequest = new TransferRequest()
+                            {
+                                Amount = replenishmentAmount,
+                                Status = TransferStatus.Pending,
+                                Timestamp = DateTimeOffset.UtcNow,
+                                Destination = replenishmentAddress.Address.ToString(),
+                                ToWalletId = _options.Value
+                                    .WalletReplenishmentSourceWalletId,
+                                TransferType = TransferType.Internal
+                            };
+                            await context.AddAsync(replenishmentTransferRequest, token);
+                            transfersProcessing.Add(replenishmentTransferRequest);
+                            return workingTx;
+                        }
+                        catch (NotEnoughFundsException e)
+                        {
+                        }
+                    }
+                }
+                else
+                {
+                    //replenishment wallet is overflowing, let's create a request to transfer from replenishment to hot wallets.
+                    walletBalances[hotWalletDerivationSchemes.First().Key] =
+                        walletBalances[hotWalletDerivationSchemes.First().Key] + changeAmount;
+                    if (walletBalances.ContainsKey("change"))
+                    {
+                        walletBalances.Remove("change");
+                    }
+
+                    var replenishmentWallet =
+                        await _walletService.GetDerivationsByWalletId(_options.Value
+                            .WalletReplenishmentSourceWalletId);
+                    var walletOption = _options.Value.Wallets.Single(option => option.WalletId == _options
+                        .Value
+                        .WalletReplenishmentSourceWalletId);
+                    var walletsToReplenish = walletBalances.Where(pair =>
+                        pair.Key != _options.Value.WalletReplenishmentSourceWalletId);
+
+                    var totalParts = walletsToReplenish.Sum(pair => pair.Value);
+                    var onePartValue = replenishmentRequest.Value.Amount / totalParts;
+                    var replenishmentAmounts =
+                        walletsToReplenish.ToDictionary(pair => pair.Key,
+                            pair => pair.Value * onePartValue);
+                    var replenishmentAddresses = walletsToReplenish.ToDictionary(pair => pair.Key,
+                        pair => _walletService.GetDerivationsByWalletId(pair.Key)
+                            .ContinueWith(
+                                task => _explorerClient.GetUnusedAsync(task.Result,
+                                    DerivationFeature.Deposit,
+                                    0, true, token), token));
+                    await Task.WhenAll(replenishmentAddresses.Values);
+                    var replenishmentpsbt = await _explorerClient.CreatePSBTAsync(replenishmentWallet,
+                        new CreatePSBTRequest()
+                        {
+                            Destinations = replenishmentAddresses.Select(pair => new CreatePSBTDestination()
+                            {
+                                Destination = pair.Value.Result.Result.Address,
+                                Amount = new Money(replenishmentAmounts[pair.Key], MoneyUnit.BTC)
+                            }).ToList(),
+                            FeePreference = new FeePreference()
+                            {
+                                ExplicitFeeRate = feeRate.FeeRate
+                            },
+                            IncludeGlobalXPub = true,
+                            AlwaysIncludeNonWitnessUTXO = true,
+                            RebaseKeyPaths = walletOption.RootedKeyPaths.Select((s, i) =>
+                                new PSBTRebaseKeyRules()
+                                {
+                                    AccountKey = new BitcoinExtPubKey(
+                                        replenishmentWallet.GetExtPubKeys().ElementAt(i), _network),
+                                    AccountKeyPath = RootedKeyPath.Parse(s)
+                                }).ToList()
+                        }, token);
+
+                    var signingRequest = new SigningRequest()
+                    {
+                        Status = SigningRequest.SigningRequestStatus.Pending,
+                        Timestamp = DateTimeOffset.UtcNow,
+                        WalletId = _options.Value
+                            .WalletReplenishmentSourceWalletId,
+                        RequiredSignatures = replenishmentWallet.GetExtPubKeys().Count() == 1
+                            ? 1
+                            : int.Parse(replenishmentWallet.ToString().Split("-").First()),
+                        PSBT = replenishmentpsbt.PSBT.ToBase64()
+                    };
+                    await context.AddAsync(signingRequest, token);
+                    foreach (var replenishmentAmount in replenishmentAmounts)
+                    {
+                        await context.TransferRequests.AddAsync(new TransferRequest()
+                        {
+                            Amount = replenishmentAmount.Value,
+                            ToWalletId = replenishmentAmount.Key,
+                            Destination = replenishmentAddresses[replenishmentAmount.Key].Result.Result
+                                .Address.ToString(),
+                            Status = TransferStatus.Pending,
+                            SigningRequestId = signingRequest.Id,
+                            Timestamp = DateTimeOffset.UtcNow,
+                            TransferType = TransferType.Internal,
+                            FromWalletId = _options.Value.WalletReplenishmentSourceWalletId
+                        }, token);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static Transaction RemoveChangeOutputs(IEnumerable<TxOut> changeOutputs, Transaction workingTx)
+        {
+            Transaction txWithReplenishment;
+            var withoutChange = workingTx.Outputs.Except(changeOutputs);
+            txWithReplenishment = workingTx.Clone();
+            txWithReplenishment.Outputs.Clear();
+            txWithReplenishment.Outputs.AddRange(withoutChange);
+            return txWithReplenishment;
         }
 
         public Task StopAsync(CancellationToken cancellationToken)

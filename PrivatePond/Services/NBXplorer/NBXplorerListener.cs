@@ -149,7 +149,7 @@ namespace PrivatePond.Services.NBXplorer
                 catch (Exception ex)
                 {
                     _logger.LogError(ex,
-                        $"Error while connecting to WebSocket of NBXplorer");
+                        $"Error while listening to NBX events. Restarting listener");
                 }
             }
         }

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NBitcoin;
+using NBitcoin.Logging;
 using NBXplorer;
 using NBXplorer.DerivationStrategy;
 using NBXplorer.Models;
@@ -93,8 +94,10 @@ namespace PrivatePond.Controllers
             {
                 return null;
             }
-
-            return (Amount: above.Value ? balance - idealBalanceAmt : idealBalanceAmt - balance, Above: above.Value);
+            var result = (Amount: above.Value ? balance - idealBalanceAmt : idealBalanceAmt - balance, Above: above.Value);
+            _logger.LogInformation(
+                $"Ideal balance amount for replenishment wallet: {idealBalanceAmt} ({_options.Value.WalletReplenishmentIdealBalancePercentage.Value}% of {totalSum} total sum) {result.Amount} needs to be sent {(result.Above ? "from" : "to")} replenishment wallet");
+            return result;
         }
 
         private static bool IsWithin(decimal value, decimal minimum, decimal maximum, out bool? above)
@@ -159,7 +162,6 @@ namespace PrivatePond.Controllers
                         var feeRate = await _explorerClient.GetFeeRateAsync(1, new FeeRate(20m), token);
                         var coins = walletUtxos.Values.SelectMany(task => task.Result);
                         Transaction workingTx = null;
-                        //TODO: Make this smart. We can use it to "balance" the hot wallets and also send extra funds to cold replenishment wallet.
                         var changeAddress = await _explorerClient.GetUnusedAsync(
                             hotWalletDerivationSchemes.First().Value.Result, DerivationFeature.Change, 0, true,
                             token);
@@ -475,7 +477,7 @@ namespace PrivatePond.Controllers
 
                         if (txWithReplenishment is not null)
                         {
-                            foreach (var txout in workingTx.Outputs)
+                            foreach (var txout in txWithReplenishment.Outputs)
                             {
                                 txBuilder.Send(txout.ScriptPubKey, txout.Value);
                             }
@@ -528,11 +530,15 @@ namespace PrivatePond.Controllers
                     var walletsToReplenish = walletBalances.Where(pair =>
                         pair.Key != _options.Value.WalletReplenishmentSourceWalletId);
 
-                    var totalParts = walletsToReplenish.Sum(pair => pair.Value);
-                    var onePartValue = replenishmentRequest.Value.Amount / totalParts;
+                    
+                    
+                    var totalSum = walletsToReplenish.Sum(pair => pair.Value) + replenishmentRequest.Value.Amount;
+                    var onePartValue = totalSum / walletsToReplenish.Count();
+                    
                     var replenishmentAmounts =
                         walletsToReplenish.ToDictionary(pair => pair.Key,
-                            pair => pair.Value * onePartValue);
+                            pair =>  onePartValue - pair.Value);
+                    _logger.LogInformation($"Balancing FROM replenishment wallet using {replenishmentRequest.Value.Amount}. {(string.Join(',',replenishmentAmounts.Select(pair => $"{pair.Value}=>{pair.Key}")))}");
                     var replenishmentAddresses = walletsToReplenish.ToDictionary(pair => pair.Key,
                         pair => _walletService.GetDerivationsByWalletId(pair.Key)
                             .ContinueWith(

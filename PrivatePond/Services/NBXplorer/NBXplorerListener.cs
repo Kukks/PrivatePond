@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -354,7 +355,7 @@ namespace PrivatePond.Services.NBXplorer
         private bool UpdateWalletTransactionFromTransactionResult(WalletTransaction walletTransaction,
             TransactionResult transactionResult)
         {
-            var hash = walletTransaction.GetHashCode();
+            var hash = JsonSerializer.Serialize(walletTransaction);
             walletTransaction.Confirmations = transactionResult.Confirmations;
             walletTransaction.BlockHash = transactionResult.BlockId?.ToString();
             walletTransaction.Timestamp = transactionResult.Timestamp;
@@ -367,7 +368,7 @@ namespace PrivatePond.Services.NBXplorer
                     ? WalletTransaction.WalletTransactionStatus.Confirmed
                     : WalletTransaction.WalletTransactionStatus.AwaitingConfirmation;
 
-            return hash == walletTransaction.GetHashCode();
+            return hash == JsonSerializer.Serialize(walletTransaction);
         }
 
         public Task StopAsync(CancellationToken cancellationToken)

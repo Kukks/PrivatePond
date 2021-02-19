@@ -32,6 +32,7 @@ namespace PrivatePond
         {
             services.AddNBXPlorerIntegration(Configuration);
             services.AddHttpClient();
+            services.AddSingleton<SigningRequestService>();
             services.AddSingleton<DepositService>();
             services.AddSingleton<TransferRequestService>();
             services.AddSingleton<IHostedService,TransferRequestService>(provider => provider.GetRequiredService<TransferRequestService>());

@@ -7,7 +7,6 @@ namespace PrivatePond.Data
     public class PrivatePondOptions
     {
         public const string OptionsConfigSection = "PrivatePond";
-        public TaskCompletionSource WalletsConfigured = new TaskCompletionSource();
         public NetworkType NetworkType { get; set; }
 
         public WalletOption[] Wallets { get; set; } = new WalletOption[0];

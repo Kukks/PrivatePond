@@ -326,30 +326,36 @@ namespace PrivatePond.Services.NBXplorer
             await _walletService.Update(new WalletService.UpdateContext() {UpdatedWalletTransactions = updated},
                 cancellationToken);
 
-            //let's handle transfer requests that were started now
+            //let's handle transfer requests that were:
+            // a withdrawal request that was processed
+            // an internal tx that was broadcasted
 
             var processingRequests = await _transferRequestService.GetTransferRequests(new TransferRequestQuery()
             {
-                Statuses = new[] {TransferStatus.Processing}
+                Statuses = new[] {TransferStatus.Pending,TransferStatus.Processing}
             });
 
             var txFetchResult = processingRequests.GroupBy(data => data.TransactionHash).Select(datas =>
                 (datas, _explorerClient.GetTransactionAsync(uint256.Parse(datas.Key), cancellationToken)));
             await Task.WhenAll(txFetchResult.Select(t => t.Item2));
-            var completedTransferRequestIds = new List<string>();
+            Dictionary<TransferStatus, List<string>> markMap = new Dictionary<TransferStatus, List<string>>()
+            {
+                {TransferStatus.Processing, new List<string>()},
+                {TransferStatus.Completed, new List<string>()}
+            };
             foreach (var txFetch in txFetchResult)
             {
                 var tx = await txFetch.Item2;
                 if (tx != null && tx.Confirmations >= _options.Value.MinimumConfirmations)
                 {
-                    completedTransferRequestIds.AddRange(txFetch.datas.Select(data => data.Id));
+                    markMap[TransferStatus.Completed].AddRange(txFetch.datas.Select(data => data.Id));
+                }else if (tx != null)
+                {
+                    markMap[TransferStatus.Processing].AddRange(txFetch.datas.Select(data => data.Id));
                 }
             }
 
-            if (completedTransferRequestIds.Any())
-            {
-                await _transferRequestService.MarkCompleted(completedTransferRequestIds);
-            }
+            await _transferRequestService.Mark(markMap);
         }
 
         private bool UpdateWalletTransactionFromTransactionResult(WalletTransaction walletTransaction,

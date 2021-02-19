@@ -68,6 +68,7 @@ namespace PrivatePond.Controllers
                 .Where(request => signingRequestsToCancel.Contains(request.Id))
                 .ToListAsync(cancellationToken: cancellationToken);
             signingRequests.ForEach(request => request.Status = SigningRequest.SigningRequestStatus.Expired);
+            _logger.LogInformation($"{signingRequests.Count} signing requests have expired.");
         }
 
         private (decimal Amount, bool Above)? HandleReplenishmentRequests(Dictionary<string, decimal> walletBalances,
@@ -124,8 +125,10 @@ namespace PrivatePond.Controllers
             {
                 try
                 {
+                    _logger.LogInformation("Checking for transfer requests to process");
                     await _explorerClient.WaitServerStartedAsync(token);
                     await using var context = _dbContextFactory.CreateDbContext();
+                    await ClearInternalPendingRequests(context, token);
                     var transferRequests = await context.TransferRequests
                         .Where(request =>
                             request.Status == TransferStatus.Pending && request.TransferType == TransferType.External)
@@ -311,6 +314,8 @@ namespace PrivatePond.Controllers
                     }
                     else
                     {
+                        
+                        _logger.LogInformation("No pending transfer requests found");
                         // no transfer requests, we should see if we need to do any replenishments
 
 
@@ -355,60 +360,66 @@ namespace PrivatePond.Controllers
                         var workingTx = (await HandleReplenishment(token, 0m, new TxOut[0], walletBalances,
                             hotWalletTasks, coins, changeAddress, feeRate, context,
                             transfersProcessing, hotWalletDerivationSchemes, null));
-
-                        var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
-                            .BuildPSBT(false);
-                        foreach (var hotWalletDerivationScheme in hotWalletDerivationSchemes)
+                        if (workingTx is not null)
                         {
-                            var walletOption = _options.Value.Wallets.Single(option =>
-                                option.WalletId == hotWalletDerivationScheme.Key);
-                            var res = await _explorerClient.UpdatePSBTAsync(new UpdatePSBTRequest()
+
+                            var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
+                                .BuildPSBT(false);
+                            foreach (var hotWalletDerivationScheme in hotWalletDerivationSchemes)
                             {
-                                DerivationScheme = hotWalletDerivationScheme.Value.Result,
-                                IncludeGlobalXPub = true,
-                                PSBT = psbt,
-                                RebaseKeyPaths = walletOption.RootedKeyPaths.Select((s, i) => new PSBTRebaseKeyRules()
+                                var walletOption = _options.Value.Wallets.Single(option =>
+                                    option.WalletId == hotWalletDerivationScheme.Key);
+                                var res = await _explorerClient.UpdatePSBTAsync(new UpdatePSBTRequest()
                                 {
-                                    AccountKey = new BitcoinExtPubKey(
-                                        hotWalletDerivationScheme.Value.Result.GetExtPubKeys().ElementAt(i), _network),
-                                    AccountKeyPath = RootedKeyPath.Parse(s)
-                                }).ToList()
+                                    DerivationScheme = hotWalletDerivationScheme.Value.Result,
+                                    IncludeGlobalXPub = true,
+                                    PSBT = psbt,
+                                    RebaseKeyPaths = walletOption.RootedKeyPaths.Select((s, i) =>
+                                        new PSBTRebaseKeyRules()
+                                        {
+                                            AccountKey = new BitcoinExtPubKey(
+                                                hotWalletDerivationScheme.Value.Result.GetExtPubKeys().ElementAt(i),
+                                                _network),
+                                            AccountKeyPath = RootedKeyPath.Parse(s)
+                                        }).ToList()
+                                }, token);
+                                psbt = res.PSBT;
+                            }
+
+                            var signedPsbt =
+                                await _walletService.SignWithHotWallets(hotWalletDerivationSchemes.Keys.ToArray(),
+                                    psbt);
+                            signedPsbt.Finalize();
+                            var tx = signedPsbt.ExtractTransaction();
+                            var txId = tx.GetHash().ToString();
+                            var timestamp = DateTimeOffset.UtcNow;
+                            var signedPsbtBase64 = signedPsbt.ToBase64();
+                            await context.SigningRequests.AddAsync(new SigningRequest()
+                            {
+                                Id = txId,
+                                Status = SigningRequest.SigningRequestStatus.Signed,
+                                PSBT = psbt.ToBase64(),
+                                FinalPSBT = signedPsbtBase64,
+                                Timestamp = timestamp,
+                                RequiredSignatures = 0,
                             }, token);
-                            psbt = res.PSBT;
-                        }
+                            foreach (var transferRequest in transfersProcessing)
+                            {
+                                transferRequest.Status = TransferStatus.Processing;
+                                transferRequest.SigningRequestId = txId;
+                            }
 
-                        var signedPsbt =
-                            await _walletService.SignWithHotWallets(hotWalletDerivationSchemes.Keys.ToArray(), psbt);
-                        signedPsbt.Finalize();
-                        var tx = signedPsbt.ExtractTransaction();
-                        var txId = tx.GetHash().ToString();
-                        var timestamp = DateTimeOffset.UtcNow;
-                        var signedPsbtBase64 = signedPsbt.ToBase64();
-                        await context.SigningRequests.AddAsync(new SigningRequest()
-                        {
-                            Id = txId,
-                            Status = SigningRequest.SigningRequestStatus.Signed,
-                            PSBT = psbt.ToBase64(),
-                            FinalPSBT = signedPsbtBase64,
-                            Timestamp = timestamp,
-                            RequiredSignatures = 0
-                        }, token);
-                        foreach (var transferRequest in transfersProcessing)
-                        {
-                            transferRequest.Status = TransferStatus.Processing;
-                            transferRequest.SigningRequestId = txId;
-                        }
-
-                        var result = await _explorerClient.BroadcastAsync(tx, token);
-                        if (!result.Success)
-                        {
-                            _logger.LogError(
-                                $"Error trying to do automated transfer with hot wallet(s). Node response: {result.RPCCodeMessage}");
-                        }
-                        else
-                        {
-                            _logger.LogInformation(
-                                $"Automated transfer broadcasted tx {txId} fulfilling {transfersProcessing.Count} requests");
+                            var result = await _explorerClient.BroadcastAsync(tx, token);
+                            if (!result.Success)
+                            {
+                                _logger.LogError(
+                                    $"Error trying to do automated transfer with hot wallet(s). Node response: {result.RPCCodeMessage}");
+                            }
+                            else
+                            {
+                                _logger.LogInformation(
+                                    $"Automated transfer broadcasted tx {txId} fulfilling {transfersProcessing.Count} requests");
+                            }
                         }
 
                         await context.SaveChangesAsync(token);
@@ -568,9 +579,10 @@ namespace PrivatePond.Controllers
                                     AccountKeyPath = RootedKeyPath.Parse(s)
                                 }).ToList()
                         }, token);
-
+                    replenishmentpsbt.PSBT.TryGetFinalizedHash(out var txid);
                     var signingRequest = new SigningRequest()
                     {
+                        Id = txid.ToString(),
                         Status = SigningRequest.SigningRequestStatus.Pending,
                         Timestamp = DateTimeOffset.UtcNow,
                         WalletId = _options.Value
@@ -596,6 +608,7 @@ namespace PrivatePond.Controllers
                             FromWalletId = _options.Value.WalletReplenishmentSourceWalletId
                         }, token);
                     }
+                    _logger.LogInformation($"Signing request {signingRequest.Id} created.");
                 }
             }
 
@@ -679,17 +692,32 @@ namespace PrivatePond.Controllers
             };
         }
 
-        public async Task MarkCompleted(List<string> completedTransferRequestIds)
+        public async Task Mark(Dictionary<TransferStatus, List<string>> statustoIds)
         {
+            var ids = statustoIds.Values.SelectMany(strings => strings);
+            if (!ids.Any())
+            {
+                return;
+            }
             await using var context = _dbContextFactory.CreateDbContext();
             var items = await context.TransferRequests
-                .Where(request => completedTransferRequestIds.Contains(request.Id)).ToListAsync();
-            foreach (var transferRequest in items)
+                .Include(request => request.SigningRequest)
+                .Where(request => ids.Contains(request.Id)).ToDictionaryAsync(request => request.Id);
+            foreach (var statustoId in statustoIds)
             {
-                transferRequest.Status = TransferStatus.Completed;
+                foreach (var s in statustoId.Value)
+                {
+                    if (items.TryGetValue(s, out var transferRequest))
+                    {
+                        transferRequest.Status = statustoId.Key;
+                        if (statustoId.Key is TransferStatus.Processing &&  transferRequest.SigningRequest is not null && transferRequest.SigningRequest?.Status is not SigningRequest.SigningRequestStatus.Signed)
+                        {
+                            transferRequest.SigningRequest.Status = SigningRequest.SigningRequestStatus.Expired;
+                        }
+                    }
+                }
             }
-
-            _logger.LogInformation($"Marked {completedTransferRequestIds.Count} transfer requests as completed.");
+            _logger.LogInformation($"Marked {context.ChangeTracker.Entries<TransferRequest>().Count(entry => entry.State is EntityState.Modified)} transfer requests statuses");
             await context.SaveChangesAsync();
         }
     }

@@ -23,7 +23,8 @@
         "PP_PRIVATEPOND__KEYSDIR": "keys",
         "PP_CONNECTIONSTRINGS__PRIVATEPONDDATABASE": "User ID=postgres;Host=127.0.0.1;Port=65466;Database=privatepondregtest;persistsecurityinfo=True",
         "PP_PRIVATEPOND__BatchTransfersEvery": "5",
-        "PP_PRIVATEPOND__WALLETS__0__WalletReplenishmentSource":  "2-of-tpubDFfb9gesTokwrY5UHgzMt5b4uf2v9SZc5eRuc6xG6SWHJBiFu8e3YpP3QfqPL54qpE7MvsAjdDS5JUGcp5Kbqw2VfWWzoU9JTeuKKBEBE67-tpubDEGquuorgFNbDrg8vepq1HnaV2mgQu9TcSBgBYfXw4AX8VMgkWqvkxHNuJmiah8iVnA3Hgj4cSvaGAXEnq814yC6hMEreckLsd7zyLL3o76",
+        "PP_PRIVATEPOND__WalletReplenishmentSource":  "2-of-tpubDFfb9gesTokwrY5UHgzMt5b4uf2v9SZc5eRuc6xG6SWHJBiFu8e3YpP3QfqPL54qpE7MvsAjdDS5JUGcp5Kbqw2VfWWzoU9JTeuKKBEBE67-tpubDEGquuorgFNbDrg8vepq1HnaV2mgQu9TcSBgBYfXw4AX8VMgkWqvkxHNuJmiah8iVnA3Hgj4cSvaGAXEnq814yC6hMEreckLsd7zyLL3o76",
+        "PP_PRIVATEPOND__WalletReplenishmentIdealBalancePercentage":  "90",
         
         "PP_PRIVATEPOND__WALLETS__0__DerivationScheme":  "tpubDCZB6sR48s4T5Cr8qHUYSZEFCQMMHRg8AoVKVmvcAP5bRw7ArDKeoNwKAJujV3xCPkBvXH5ejSgbgyN6kREmF7sMd41NdbuHa8n1DZNxSMg",
         "PP_PRIVATEPOND__WALLETS__0__AllowForDeposits":  "true",

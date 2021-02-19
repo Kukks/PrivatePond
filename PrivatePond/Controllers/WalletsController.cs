@@ -70,7 +70,7 @@ namespace PrivatePond.Controllers
         /// <summary>
         /// Approve a deposit to an inactive request.
         /// </summary>
-        /// <remarks> If a deposit is made to an inactive request, it may have bee don to a wallet that is no longer accessible. These deposits are not managed actively by the system and will require manual intervention. Thus, you should only approve if you are sure the funds can be managed and you should heavily encourage users to always generate a fresh deposit request instead of reusing old ones.</remarks>
+        /// <remarks> If a deposit is made to an inactive request, it may have been done to a wallet that is no longer accessible. These deposits are not managed actively by the system and will require manual intervention. Thus, you should only approve if you are sure the funds can be managed and you should heavily encourage users to always generate a fresh deposit request instead of reusing old ones.</remarks>
         /// <param name="walletId">the wallet id</param>
         /// <param name="walletTransactionId">the wallet transaction id to approve</param>
         [ProducesResponseType(200)]

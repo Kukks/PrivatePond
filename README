@@ -15,5 +15,23 @@
 * You can view API docs at localhost:5000/swagger
 
 ## Helpers
-* You can emulate new blocks by alling the `docker-bitcoin-generate.sh` pr `.ps1` files. `docker-bitcoin-generate.sh 6` generates 6 blocks for example
+* You can emulate new blocks by calling the `docker-bitcoin-generate.sh` pr `.ps1` files. `docker-bitcoin-generate.sh 6` generates 6 blocks for example
 * You can use the bitcoin-cli sh/ps1 scripts to test sending funds.
+
+
+## Configuring wallets
+
+NON-SEGWIT wallets are not supported. They will causes errors in the system. 
+
+```
+        "PP_PRIVATEPOND__WALLETS__0__DerivationScheme":  "tpubDCZB6sR48s4T5Cr8qHUYSZEFCQMMHRg8AoVKVmvcAP5bRw7ArDKeoNwKAJujV3xCPkBvXH5ejSgbgyN6kREmF7sMd41NdbuHa8n1DZNxSMg",
+        "PP_PRIVATEPOND__WALLETS__0__AllowForDeposits":  "true",
+        "PP_PRIVATEPOND__WALLETS__0__AllowForTransfers":  "true",        
+        "PP_PRIVATEPOND__WALLETS__0__RootedKeyPaths__0":  "5c9e228d/m/84'/1'/0'",
+```
+
+You can define an unlimited number of wallets using configuration. There are 4 main properties to configuring a wallet,:
+* `DerivationScheme` - an NBX format of a wallet
+* `AllowForDeposits`- whether this wallet will allow users to diurectly deposit to it
+* `AllowForTransfers`- whether this wallet will be used to do transfers to users (also requires it to be a hot wallet)
+* `RootedKeyPaths__x` - the master fingerprint 

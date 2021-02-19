@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
 namespace PrivatePond.Data.EF
@@ -37,15 +38,23 @@ namespace PrivatePond.Data.EF
 
     public class SigningRequest
     {
+        /// <summary>
+        /// the id of the signing request.This is typically the transaction id of what is being signed
+        /// </summary>
         public string Id { get; set; }
+        /// <summary>
+        /// 
+        /// </summary>
         public string PSBT { get; set; }
         public string FinalPSBT { get; set; }
         public int RequiredSignatures { get; set; }
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public SigningRequestStatus Status { get; set; }
         public string WalletId { get; set; }
         public DateTimeOffset Timestamp { get; set; }
 
         public List<SigningRequestItem> SigningRequestItems { get; set; }
+        public TransferRequest TransferRequest { get; set; }
 
 
         public enum SigningRequestStatus
@@ -53,6 +62,7 @@ namespace PrivatePond.Data.EF
             Pending,
             Signed,
             Expired,
+            Failed
         }
     }
 }

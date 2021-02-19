@@ -61,43 +61,30 @@ namespace PrivatePond.Controllers
                 SignedPSBT = signedPSBT.ToBase64()
             };
             signingRequest.SigningRequestItems.Add(newSigningRequestItem);
-            if (signingRequest.RequiredSignatures <= signingRequest.SigningRequestItems.Count())
+            await _explorerClient.WaitServerStartedAsync();
+            var psbts = signingRequest.SigningRequestItems.Select(item => PSBT.Parse(item.SignedPSBT, _network));
+            var combined = psbts.Aggregate((p1, p2) => p1.Combine(p2));
+            if (combined.TryFinalize(out var errors))
             {
-                await _explorerClient.WaitServerStartedAsync();
-                //signed!
-                var psbts = signingRequest.SigningRequestItems.Select(item => PSBT.Parse(item.SignedPSBT, _network));
-                var combined = psbts.Aggregate((p1, p2) => p1.Combine(p2));
-                if (combined.TryFinalize(out var errors))
+                signingRequest.FinalPSBT = combined.ToBase64();
+                signingRequest.Status = SigningRequest.SigningRequestStatus.Signed;
+                var bResult = await _explorerClient.BroadcastAsync(combined.ExtractTransaction());
+                if (bResult.Success)
                 {
-                    signingRequest.FinalPSBT = combined.ToBase64();
-                    signingRequest.Status = SigningRequest.SigningRequestStatus.Signed;
-                    var bResult = await _explorerClient.BroadcastAsync(combined.ExtractTransaction());
-                    if (bResult.Success)
-                    {
-                        _logger.LogInformation($"Signing request {signingRequestId} has been signed and broadcast!");
-                    }
-                    else
-                    {
-                        var error =
-                            $"Could not broadcast signing request signed psbt for id {signingRequestId} because: {bResult.RPCCodeMessage}";
-                        _logger.LogWarning(error);
-
-                        signingRequest.Status = SigningRequest.SigningRequestStatus.Failed;
-                        await context.SaveChangesAsync();
-                        return error;
-                    }
-                    
+                    _logger.LogInformation($"Signing request {signingRequestId} has been signed and broadcast!");
                 }
                 else
                 {
                     var error =
-                        $"Could not finalize signing request psbt for id {signingRequestId} because: {(string.Join(',', errors))}";
+                        $"Could not broadcast signing request signed psbt for id {signingRequestId} because: {bResult.RPCCodeMessage}";
                     _logger.LogWarning(error);
 
                     signingRequest.Status = SigningRequest.SigningRequestStatus.Failed;
                     await context.SaveChangesAsync();
                     return error;
                 }
+
+
             }
 
             await context.SaveChangesAsync();

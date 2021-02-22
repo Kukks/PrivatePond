@@ -381,6 +381,10 @@ namespace PrivatePond.Controllers
             {
 
             var derivationStrategy = _derivationStrategyFactory.Parse(derivationScheme);
+            if (derivationStrategy.ScriptPubKeyType() == ScriptPubKeyType.Legacy)
+            {
+                throw new FormatException("Non segwit wallets are not supported.");
+            }
             Derivations.Add(derivationScheme, derivationStrategy);
             return derivationStrategy;
             

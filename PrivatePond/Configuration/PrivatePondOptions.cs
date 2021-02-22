@@ -23,6 +23,11 @@ namespace PrivatePond.Data
         //if the min/max is reached, suggest a transfer from/to this wallet
         public string WalletReplenishmentSource { get; set; }
         public string WalletReplenishmentSourceWalletId { get; set; }
+        public string PayjoinEndpointRoute { get; set; } = "https://127.0.0.1:5001/pj";
+        public bool EnableExternalExpressTransfers { get; set; } = true;
+        public bool EnablePayjoinTransfers { get; set; } = true;
+        public bool EnablePayjoinDeposits { get; set; } = true;
+        public bool BatchTransfersInPayjoin { get; set; } = true;
     }
 
     public class WalletOption

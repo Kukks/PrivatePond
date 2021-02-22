@@ -29,11 +29,13 @@ namespace PrivatePond.Controllers
         public async Task<string> SubmitSignedPSBT(string signingRequestId, PSBT signedPSBT)
         {
             await using var context = _contextFactory.CreateDbContext();
-            var signingRequest = await context.SigningRequests.FindAsync(signingRequestId);
+            var signingRequest = await context.SigningRequests.Include(request => request.SigningRequestItems).SingleOrDefaultAsync( request => request.Id.Equals(signingRequestId));
             if (signingRequest is null)
             {
                 return "Invalid signing request id";
             }
+
+            signingRequest.SigningRequestItems ??= new List<SigningRequestItem>();
 
             if (signingRequest.Status is not SigningRequest.SigningRequestStatus.Pending)
             {
@@ -44,7 +46,6 @@ namespace PrivatePond.Controllers
             {
                 return "The PSBT was not signed";
             }
-
             if (signingRequest.SigningRequestItems.Any(item => item.SignedPSBT == signedPSBT.ToBase64()))
             {
                 return "The signing request has already been signed by this signer";
@@ -83,10 +84,7 @@ namespace PrivatePond.Controllers
                     await context.SaveChangesAsync();
                     return error;
                 }
-
-
             }
-
             await context.SaveChangesAsync();
             return null;
         }

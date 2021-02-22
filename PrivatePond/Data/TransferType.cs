@@ -3,6 +3,7 @@ namespace PrivatePond.Data
     public enum TransferType
     {
         External,
-        Internal
+        Internal,
+        ExternalExpress
     }
 }

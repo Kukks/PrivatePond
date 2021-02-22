@@ -335,8 +335,9 @@ namespace PrivatePond.Services.NBXplorer
                 Statuses = new[] {TransferStatus.Pending,TransferStatus.Processing}
             });
 
-            var txFetchResult = processingRequests.GroupBy(data => data.TransactionHash).Select(datas =>
-                (datas, _explorerClient.GetTransactionAsync(uint256.Parse(datas.Key), cancellationToken)));
+            var txFetchResult = processingRequests.GroupBy(data => data.TransactionHash)
+                .Where(datas => datas.Key is not null).Select(datas =>
+                    (datas, _explorerClient.GetTransactionAsync(uint256.Parse(datas.Key), cancellationToken)));
             await Task.WhenAll(txFetchResult.Select(t => t.Item2));
             Dictionary<TransferStatus, List<string>> markMap = new Dictionary<TransferStatus, List<string>>()
             {

@@ -7,13 +7,14 @@ namespace PrivatePond
     public static class HelperExtensions
     {
         public static string GetAddress(string destination, Network network, out ScriptPubKeyType? scriptPubKeyType,
-            out decimal? amount)
+            out decimal? amount, out BitcoinUrlBuilder bip21)
         {
+            bip21 = null;
             BitcoinAddress address;
             amount = null;
             if (destination.ToLowerInvariant().StartsWith("bitcoin:"))
             {
-                var bip21 = new BitcoinUrlBuilder(destination, network);
+                bip21 = new BitcoinUrlBuilder(destination, network);
                 address = bip21.Address;
                 amount = bip21.Amount?.ToDecimal(MoneyUnit.BTC);
             }

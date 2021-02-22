@@ -72,7 +72,7 @@ namespace PrivatePond.Controllers
                 WalletId = request.WalletId,
                 Destination = request.Address,
                 Label = request.Id,
-                PaymentLink = $"bitcoin:{request.Address}",
+                PaymentLink = $"bitcoin:{request.Address}{(_options.Value.EnablePayjoinDeposits? "?pj="+ _options.Value.PayjoinEndpointRoute: "")}",
                 History = request?.WalletTransactions?.Select(transaction =>
                     new DepositRequestDataItemPaymentItem()
                     {

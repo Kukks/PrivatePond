@@ -4,7 +4,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.Extensions.Options;
 using NBitcoin;
+using PrivatePond.Data;
 
 namespace PrivatePond.Controllers
 {
@@ -13,11 +15,13 @@ namespace PrivatePond.Controllers
     {
         private readonly TransferRequestService _transferRequestService;
         private readonly Network _network;
+        private readonly IOptions<PrivatePondOptions> _options;
 
-        public TransfersController(TransferRequestService transferRequestService, Network network)
+        public TransfersController(TransferRequestService transferRequestService, Network network, IOptions<PrivatePondOptions> options)
         {
             _transferRequestService = transferRequestService;
             _network = network;
+            _options = options;
         }
 
         /// <summary>
@@ -45,7 +49,7 @@ namespace PrivatePond.Controllers
                 {
                     var address =
                         HelperExtensions.GetAddress(request.Destination, _network, out var scriptPubKeyType,
-                            out var bip21Amount);
+                            out var bip21Amount, out _);
 
                     if (bip21Amount.HasValue && request.Amount.HasValue && request.Amount != bip21Amount.Value)
                     {
@@ -55,6 +59,12 @@ namespace PrivatePond.Controllers
                     else if (bip21Amount.HasValue)
                     {
                         request.Amount = bip21Amount;
+                    }
+
+                    if (request.Express && !_options.Value.EnableExternalExpressTransfers)
+                    {
+                        ModelState.AddModelError((RequestTransferRequest x) => x.Amount,
+                            "Express option is disabled.");
                     }
                 }
                 catch (Exception e)

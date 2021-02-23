@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -61,7 +62,8 @@ namespace PrivatePond
                 builder.UseNpgsql(connString, optionsBuilder => { optionsBuilder.EnableRetryOnFailure(10); });
             }, ServiceLifetime.Singleton);
             services.AddSingleton<IStartupTask, MigrationStartupTask>();
-            services.AddControllers();
+            services.AddControllers().AddJsonOptions(options => 
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));;
             services.AddSwaggerGen(c =>
             {
                 var filePath = Path.Combine(System.AppContext.BaseDirectory, "PrivatePond.xml");

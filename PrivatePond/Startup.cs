@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Serialization;
+using BTCPayServer.BIP78.Sender;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using NBitcoin;
+using NBXplorer.DerivationStrategy;
 using PrivatePond.Controllers;
 using PrivatePond.Data;
 using PrivatePond.Data.EF;
@@ -19,6 +21,34 @@ using PrivatePond.Services.NBXplorer;
 
 namespace PrivatePond
 {
+    public class NBXplorerPayjoinWallet : IPayjoinWallet
+    {
+        private readonly DerivationStrategyBase _derivationStrategyBase;
+        private readonly RootedKeyPath[] _rootedKeyPaths;
+
+        public NBXplorerPayjoinWallet(DerivationStrategyBase derivationStrategyBase, RootedKeyPath[] rootedKeyPaths)
+        {
+            _derivationStrategyBase = derivationStrategyBase;
+            _rootedKeyPaths = rootedKeyPaths;
+        }
+        public IHDScriptPubKey Derive(KeyPath keyPath)
+        {
+            return ((IHDScriptPubKey)_derivationStrategyBase).Derive(keyPath);
+        }
+
+        public bool CanDeriveHardenedPath()
+        {
+            return _derivationStrategyBase.CanDeriveHardenedPath();
+        }
+
+        public Script ScriptPubKey => ((IHDScriptPubKey)_derivationStrategyBase).ScriptPubKey;
+        public ScriptPubKeyType ScriptPubKeyType => _derivationStrategyBase.ScriptPubKeyType();
+
+        public RootedKeyPath RootedKeyPath => _rootedKeyPaths.FirstOrDefault();
+
+        public IHDKey AccountKey => _derivationStrategyBase.GetExtPubKeys().FirstOrDefault();
+    }
+    
     public class Startup
     {
         public Startup(IConfiguration configuration)
@@ -34,8 +64,11 @@ namespace PrivatePond
             services.AddNBXPlorerIntegration(Configuration);
             services.AddHttpClient();
             services.AddSingleton<SigningRequestService>();
+            services.AddSingleton<PayjoinClient>();
             services.AddSingleton<DepositService>();
             services.AddSingleton<TransferRequestService>();
+            services.AddSingleton<TransactionBroadcasterService>();
+            services.AddSingleton<IHostedService,TransactionBroadcasterService>(provider => provider.GetRequiredService<TransactionBroadcasterService>());
             services.AddSingleton<IHostedService,TransferRequestService>(provider => provider.GetRequiredService<TransferRequestService>());
             services.AddDataProtection(options => options.ApplicationDiscriminator = "PrivatePond");
             services.AddOptions<PrivatePondOptions>()

@@ -17,7 +17,8 @@ namespace PrivatePond.Controllers
         private readonly Network _network;
         private readonly IOptions<PrivatePondOptions> _options;
 
-        public TransfersController(TransferRequestService transferRequestService, Network network, IOptions<PrivatePondOptions> options)
+        public TransfersController(TransferRequestService transferRequestService, Network network,
+            IOptions<PrivatePondOptions> options)
         {
             _transferRequestService = transferRequestService;
             _network = network;
@@ -79,7 +80,10 @@ namespace PrivatePond.Controllers
                 return BadRequest(ModelState);
             }
 
-            return Ok(await _transferRequestService.CreateTransferRequest(request));
+            var result = await _transferRequestService.CreateTransferRequest(request);
+            if (result is not null)
+                return Ok(result);
+            return BadRequest("Could not create transfer.");
         }
 
         /// <summary>

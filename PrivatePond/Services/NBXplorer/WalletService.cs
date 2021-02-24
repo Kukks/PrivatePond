@@ -488,7 +488,7 @@ namespace PrivatePond.Controllers
                         continue;
                     }
 
-                    var rootedKeyPath = RootedKeyPath.Parse(walletOption.RootedKeyPaths[i]);
+                    var rootedKeyPath = walletOption.ParsedRootedKeyPaths.ElementAt(i);
                     resultingPSBT = resultingPSBT.SignAll(deriv, key, rootedKeyPath);
                     i++;
                 }

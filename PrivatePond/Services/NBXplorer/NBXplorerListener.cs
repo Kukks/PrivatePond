@@ -354,6 +354,10 @@ namespace PrivatePond.Services.NBXplorer
                 {
                     markMap[TransferStatus.Processing].AddRange(txFetch.datas.Select(data => data.Id));
                 }
+                else
+                {
+                    
+                }
             }
 
             await _transferRequestService.Mark(markMap);

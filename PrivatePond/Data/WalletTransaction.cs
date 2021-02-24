@@ -17,8 +17,6 @@ namespace PrivatePond.Data
         /// </summary>
         public string DepositRequestId { get; set; }
 
-        public string TransferRequestId { get; set; }
-
         /// <summary>
         /// the first block hash it was confirmed in 
         /// </summary>

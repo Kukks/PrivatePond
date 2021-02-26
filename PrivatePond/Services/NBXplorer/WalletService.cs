@@ -423,11 +423,8 @@ namespace PrivatePond.Controllers
             dbContext.UpdateRange(context.UpdatedWalletTransactions);
             dbContext.UpdateRange(context.UpdatedDepositRequests);
             await dbContext.AddRangeAsync(context.AddedWalletTransactions, cancellationToken);
-            var walletTransactionsConfirmed = context.AddedWalletTransactions.Concat(context.UpdatedWalletTransactions)
-                .Where(transaction => transaction.Status == WalletTransaction.WalletTransactionStatus.Confirmed)
-                .ToList();
-            
-                await dbContext.SaveChangesAsync(cancellationToken);
+
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
 
         public class UpdateContext
@@ -471,6 +468,7 @@ namespace PrivatePond.Controllers
         public async Task<PSBT> SignWithHotWallets(string[] walletIdsToSignWith, PSBT psbt)
         {
             var resultingPSBT = psbt.Clone();
+            
             var derivationsByWalletId = walletIdsToSignWith.ToDictionary(s => s, GetDerivationsByWalletId);
             await Task.WhenAll(derivationsByWalletId.Values);
             foreach (var task in derivationsByWalletId)

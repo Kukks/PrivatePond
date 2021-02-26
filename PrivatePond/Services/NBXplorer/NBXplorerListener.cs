@@ -241,6 +241,7 @@ namespace PrivatePond.Services.NBXplorer
                     }, cancellationToken)).ToDictionary(request => request.Id);
                 foreach (var keyValuePair in missingTxs)
                 {
+                    
                     var tx = await
                         _explorerClient.GetTransactionAsync(keyValuePair.Value.TransactionHash, cancellationToken);
                     var depositRequestId = keyValuePair.Value.ScriptPubKey.Hash.ToString();

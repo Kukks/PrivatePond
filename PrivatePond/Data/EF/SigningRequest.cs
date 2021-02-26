@@ -32,5 +32,14 @@ namespace PrivatePond.Data.EF
             Expired,
             Failed
         }
+        public enum SigningRequestType
+        {
+            HotWallet,
+            Replenishment,
+            ExpressTransfer,
+            ExpressTransferPayjoin,
+            DepositPayjoin
+        }
+        
     }
 }

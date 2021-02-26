@@ -13,6 +13,8 @@ namespace PrivatePond.Data.EF
         public DbSet<SigningRequestItem> SigningRequestItems { get; set; }
         public DbSet<ScheduledTransaction> ScheduledTransactions { get; set; }
         
+        public DbSet<PayjoinLock> PayjoinLocks { get; set; }
+        public DbSet<PayjoinRecord> PayjoinRecords { get; set; }
 
 
         public PrivatePondDbContext(DbContextOptions<PrivatePondDbContext> options) : base(options)

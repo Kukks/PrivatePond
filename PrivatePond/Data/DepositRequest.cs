@@ -9,6 +9,7 @@ namespace PrivatePond.Data
         public string UserId { get; set; }
         public string WalletId { get; set; }
         public List<WalletTransaction> WalletTransactions { get; set; }
+        public List<PayjoinRecord> PayjoinRecords { get; set; }
         public bool Active { get; set; }
         public string Address { get; set; }
         public string KeyPath { get; set; }

@@ -65,6 +65,8 @@ namespace PrivatePond
             services.AddHttpClient();
             services.AddSingleton<SigningRequestService>();
             services.AddSingleton<PayjoinClient>();
+            services.AddSingleton<PayjoinReceiverWallet>();
+            services.AddSingleton<PayJoinLockService>();
             services.AddSingleton<DepositService>();
             services.AddSingleton<TransferRequestService>();
             services.AddSingleton<TransactionBroadcasterService>();

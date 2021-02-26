@@ -41,7 +41,13 @@ namespace PrivatePond.Data
         //mandatory keypath needed to create PSBTs for transfers
         public string[] RootedKeyPaths { get; set; }
 
-        public RootedKeyPath[] ParsedRootedKeyPaths => RootedKeyPaths.Select(RootedKeyPath.Parse).ToArray();
+        public RootedKeyPath[] ParsedRootedKeyPaths
+        {
+            get
+            {
+                return RootedKeyPaths.Select(RootedKeyPath.Parse).ToArray();
+            }
+        }
 
         public bool AllowForTransfers { get; set; }
 

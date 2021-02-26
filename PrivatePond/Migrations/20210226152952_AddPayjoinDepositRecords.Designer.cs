@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PrivatePond.Data.EF;
@@ -9,9 +10,10 @@ using PrivatePond.Data.EF;
 namespace PrivatePond.Migrations
 {
     [DbContext(typeof(PrivatePondDbContext))]
-    partial class PrivatePondDbContextModelSnapshot : ModelSnapshot
+    [Migration("20210226152952_AddPayjoinDepositRecords")]
+    partial class AddPayjoinDepositRecords
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -226,6 +228,9 @@ namespace PrivatePond.Migrations
 
                     b.Property<bool>("InactiveDepositRequest")
                         .HasColumnType("boolean");
+
+                    b.Property<decimal?>("PayjoinAmount")
+                        .HasColumnType("numeric");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");

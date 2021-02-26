@@ -24,7 +24,7 @@ namespace PrivatePond.Controllers
         [HttpGet("")]
         public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequests(DepositRequestQuery depositRequestQuery)
         {
-            return Ok(await _depositService.GetDepositRequests(depositRequestQuery, CancellationToken.None));
+            return Ok((await _depositService.GetDepositRequests(depositRequestQuery, CancellationToken.None)).Select(request => _depositService.FromDbModel(request)));
         }
         
         /// <summary>
@@ -53,11 +53,13 @@ namespace PrivatePond.Controllers
         [HttpGet("users/{userId}/history")]
         public async Task<ActionResult<List<DepositRequestData>>> GetDepositRequestHistory(string userId)
         {
-            return Ok(await _depositService.GetDepositRequests(new DepositRequestQuery()
-            {
-                UserIds = new[] {userId},
-                IncludeWalletTransactions = true
-            }, CancellationToken.None).ContinueWith(task => task.Result.OrderByDescending(request => request.Timestamp)));
+            return Ok((await _depositService.GetDepositRequests(new DepositRequestQuery()
+                    {
+                        UserIds = new[] {userId},
+                        IncludeWalletTransactions = true
+                    }, CancellationToken.None)
+                    .ContinueWith(task => task.Result.OrderByDescending(request => request.Timestamp)))
+                .Select(request => _depositService.FromDbModel(request)));
         }
     }
 }

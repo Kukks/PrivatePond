@@ -124,7 +124,7 @@ namespace PrivatePond.Controllers
             return true;
         }
 
-        private async Task<(Dictionary<string, DerivationStrategyBase> Wallets, Dictionary<string, Coin[]> UTXOS)>
+        public async Task<(Dictionary<string, DerivationStrategyBase> Wallets, Dictionary<string, Coin[]> UTXOS)>
             GetHotWallets(CancellationToken token = default)
         {
             var allowed = _options.Value.Wallets.Where(option => option.AllowForTransfers).ToList();
@@ -720,6 +720,7 @@ namespace PrivatePond.Controllers
                                     psbt.Finalize();
                                     tx = psbt.ExtractTransaction();
                                     txId = tx.GetHash().ToString();
+                                    
                                     await context.ScheduledTransactions.AddAsync(new ScheduledTransaction()
                                     {
                                         Id = txId,

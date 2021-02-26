@@ -42,10 +42,11 @@ namespace PrivatePond.Controllers
             _ = BroadcastPlanned(cancellationToken);
             return Task.CompletedTask;
         }
-
-        public async Task Schedule(ScheduledTransaction transaction,PrivatePondDbContext context = null)
+        public async Task Schedule(ScheduledTransaction transaction)
         {
-            
+            await using var ctx = _dbContextFactory.CreateDbContext();
+            await ctx.ScheduledTransactions.AddAsync(transaction);
+            await ctx.SaveChangesAsync();
         }
 
         private async Task BroadcastPlanned(CancellationToken token)

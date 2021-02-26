@@ -1,11 +1,15 @@
-using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
 using System.Threading.Tasks;
-using BIP78.Receiver;
+using BTCPayServer.BIP78.Receiver;
+using BTCPayServer.BIP78.Sender;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NBitcoin;
-using NBXplorer;
+using NBXplorer.DerivationStrategy;
 using PrivatePond.Controllers.Filters;
 using PrivatePond.Data;
 using PrivatePond.Data.EF;
@@ -14,15 +18,20 @@ namespace PrivatePond.Controllers
 {
     public class PayjoinDepositController : Controller
     {
-        private readonly TransferRequestService _transferRequestService;
         private readonly IOptions<PrivatePondOptions> _options;
+        private readonly PayjoinReceiverWallet _payjoinReceiverWaller;
+        private readonly Network _network;
 
-        public PayjoinDepositController(TransferRequestService transferRequestService, IOptions<PrivatePondOptions> options)
+        public PayjoinDepositController(
+            IOptions<PrivatePondOptions> options,
+            PayjoinReceiverWallet payjoinReceiverWaller,
+            Network network)
         {
-            _transferRequestService = transferRequestService;
             _options = options;
+            _payjoinReceiverWaller = payjoinReceiverWaller;
+            _network = network;
         }
-        
+
         [HttpPost("~/pj")]
         [IgnoreAntiforgeryToken]
         [MediaTypeConstraint("text/plain")]
@@ -37,72 +46,58 @@ namespace PrivatePond.Controllers
             {
                 return NotFound();
             }
-            
-            if (v != 1)
+
+            string rawBody;
+            using (StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8))
             {
-                return BadRequest(new {
-                    errorCode="version-unsupported",
-                    supported = new []{1},
-                    message = "This version of payjoin is not supported."
-                });
+                rawBody = (await reader.ReadToEndAsync());
             }
-            
-            return BadRequest();
+
+            if (!PSBT.TryParse(rawBody, _network, out var psbt))
+            {
+                return BadRequest(CreatePayjoinError("original-psbt-rejected", "invalid transaction or psbt"));
+            }
+
+            var ctx = new PrivatePondPayjoinProposalContext(psbt, new PayjoinClientParameters()
+            {
+                Version = v,
+                DisableOutputSubstitution = disableoutputsubstitution,
+                MinFeeRate = minfeerate >= 0.0m ? new FeeRate(minfeerate) : null,
+                MaxAdditionalFeeContribution =
+                    Money.Satoshis(maxadditionalfeecontribution is long t && t >= 0 ? t : 0),
+                AdditionalFeeOutputIndex = additionalfeeoutputindex
+            });
+            try
+            {
+                await _payjoinReceiverWaller.Initiate(ctx);
+
+                return Ok(ctx.PayjoinReceiverWalletProposal.PayjoinPSBT.ToBase64());
+            }
+            catch (PayjoinReceiverException e)
+            {
+                return BadRequest(CreatePayjoinError(e.ErrorCode, e.ReceiverMessage));
+            }
+        }
+
+        private dynamic CreatePayjoinError(string errorCode, string friendlyMessage)
+        {
+            return new
+            {
+                errorCode = errorCode,
+                message = friendlyMessage
+            };
         }
     }
 
-    public class PayjoinReceiverWaller : PayjoinReceiverWallet<PayjoinProposalContext>
+    public class PrivatePondPayjoinProposalContext : PayjoinProposalContext
     {
-        private readonly ExplorerClient _explorerClient;
-        private readonly Network _network;
-        private readonly TransactionBroadcasterService _transactionBroadcasterService;
+        public Dictionary<string, Coin[]> WalletUTXOS;
+        public Dictionary<string, DerivationStrategyBase> HotWallets { get; set; }
+        public DepositRequest? DepositRequest { get; set; }
 
-        public PayjoinReceiverWaller(ExplorerClient explorerClient, Network network, TransactionBroadcasterService transactionBroadcasterService )
+        public PrivatePondPayjoinProposalContext(PSBT originalPSBT,
+            PayjoinClientParameters payjoinClientParameters = null) : base(originalPSBT, payjoinClientParameters)
         {
-            _explorerClient = explorerClient;
-            _network = network;
-            _transactionBroadcasterService = transactionBroadcasterService;
-        }
-        protected override Task<bool> SupportsType(ScriptPubKeyType scriptPubKeyType)
-        {
-            return Task.FromResult(scriptPubKeyType != ScriptPubKeyType.Legacy);
-        }
-
-        protected override Task<bool> InputsSeenBefore(PSBTInputList inputList)
-        {
-            throw new NotImplementedException();
-        }
-
-        protected override async Task<string> IsMempoolEligible(PSBT psbt)
-        {
-            var result = await _explorerClient.BroadcastAsync(psbt.ExtractTransaction(), true);
-            return result.Success ? null : result.RPCCodeMessage;
-        }
-
-        protected override async Task BroadcastOriginalTransaction(PayjoinProposalContext context, TimeSpan scheduledTime)
-        {
-            if (scheduledTime == TimeSpan.Zero)
-            {
-                await _explorerClient.BroadcastAsync(context.OriginalTransaction);
-                return;
-            }
-
-            await _transactionBroadcasterService.Schedule(new ScheduledTransaction()
-            {
-                BroadcastAt = DateTimeOffset.UtcNow.Add(scheduledTime),
-                Id = context.OriginalTransaction.GetHash().ToString(),
-                Transaction = context.OriginalTransaction.ToHex()
-            });
-        }
-
-        protected override Task ComputePayjoinModifications(PayjoinProposalContext context)
-        {
-            throw new NotImplementedException();
-        }
-
-        protected override Task<PayjoinPaymentRequest> FindMatchingPaymentRequests(PayjoinProposalContext psbt)
-        {
-            throw new NotImplementedException();
         }
     }
 }

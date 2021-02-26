@@ -64,7 +64,7 @@ namespace PrivatePond.Controllers
                 .ToList();
         }
 
-        private DepositRequestData FromDbModel(DepositRequest request)
+        public DepositRequestData FromDbModel(DepositRequest request)
         {
             return new()
             {
@@ -74,13 +74,19 @@ namespace PrivatePond.Controllers
                 Label = request.Id,
                 PaymentLink = $"bitcoin:{request.Address}{(_options.Value.EnablePayjoinDeposits? "?pj="+ _options.Value.PayjoinEndpointRoute: "")}",
                 History = request?.WalletTransactions?.Select(transaction =>
-                    new DepositRequestDataItemPaymentItem()
+                {
+                    var txid = transaction.OutPoint.Hash.ToString();
+                    var pjRecord = request.PayjoinRecords?.SingleOrDefault(record => record.Id == txid);
+                    var amt = transaction.Amount - (pjRecord?.DepositContributedAmount ?? 0); 
+                    return new DepositRequestDataItemPaymentItem()
                     {
                         Confirmed = transaction.Status == WalletTransaction.WalletTransactionStatus.Confirmed,
                         Timestamp = transaction.Timestamp,
-                        Value = transaction.Amount,
+                        Value = amt,
+                        PayjoinValue = pjRecord is null? null:transaction.Amount,
                         TransactionId = transaction.OutPoint.Hash.ToString()
-                    })?.ToList()
+                    };
+                })?.ToList()
             };
         }
 
@@ -94,6 +100,10 @@ namespace PrivatePond.Controllers
             if (query.IncludeWalletTransactions)
             {
                 queryable = queryable.Include(request => request.WalletTransactions);
+            }
+            if (query.IncludePayjoinRecords)
+            {
+                queryable = queryable.Include(request => request.PayjoinRecords);
             }
 
             if (query.WalletIds is not null)
@@ -119,6 +129,11 @@ namespace PrivatePond.Controllers
                 query.UserIds = query.UserIds.Select(NormalizeUserId).ToArray();
                 queryable = queryable.Where(transaction =>
                     query.UserIds.Contains(transaction.UserId));
+            }
+            if (query.Address is not null)
+            {
+                queryable = queryable.Where(transaction =>
+                    query.Address.Contains(transaction.Address));
             }
 
             return await queryable.ToListAsync(cancellationToken);

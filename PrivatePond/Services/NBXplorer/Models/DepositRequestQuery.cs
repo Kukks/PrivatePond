@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PrivatePond.Controllers
 {
     public class DepositRequestQuery
@@ -10,6 +12,12 @@ namespace PrivatePond.Controllers
         /// Include the history of transactions associated with this deposit request
         /// </summary>
         public bool IncludeWalletTransactions { get; set; }
+
+        [JsonIgnore]
+        /// <summary>
+        /// Include the history of transactions associated with this deposit request
+        /// </summary>
+        public bool IncludePayjoinRecords { get; set; } = true;
         /// <summary>
         /// Filter based on wallet id.
         /// </summary>
@@ -23,5 +31,10 @@ namespace PrivatePond.Controllers
         /// Filter based on users
         /// </summary>
         public string[] UserIds { get; set; }
+
+        /// <summary>
+        /// Filter based on addresses
+        /// </summary>
+        public string[] Address { get; set; }
     }
 }

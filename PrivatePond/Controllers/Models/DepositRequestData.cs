@@ -40,9 +40,13 @@ namespace PrivatePond.Controllers
         /// </summary>
         public string TransactionId { get; set; }
         /// <summary>
-        /// the amount
+        /// the amount deposited
         /// </summary>
         public decimal Value { get; set; }
+        /// <summary>
+        /// the value of the transaction output if a payjoin occurred
+        /// </summary>
+        public decimal? PayjoinValue { get; set; }
         //the time of payment
         public DateTimeOffset Timestamp { get; set; }
         //whether it was confirmed

@@ -72,6 +72,7 @@ namespace PrivatePond
             services.AddSingleton<TransactionBroadcasterService>();
             services.AddSingleton<IHostedService,TransactionBroadcasterService>(provider => provider.GetRequiredService<TransactionBroadcasterService>());
             services.AddSingleton<IHostedService,TransferRequestService>(provider => provider.GetRequiredService<TransferRequestService>());
+            services.AddSingleton<IHostedService,PayJoinLockService>(provider => provider.GetRequiredService<PayJoinLockService>());
             services.AddDataProtection(options => options.ApplicationDiscriminator = "PrivatePond");
             services.AddOptions<PrivatePondOptions>()
                 .Bind(Configuration.GetSection(PrivatePondOptions.OptionsConfigSection)).PostConfigure(

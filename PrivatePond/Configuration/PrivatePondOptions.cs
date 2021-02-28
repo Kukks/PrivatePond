@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using NBitcoin;
 
@@ -40,7 +41,8 @@ namespace PrivatePond.Data
         public bool AllowForDeposits { get; set; }
         //mandatory keypath needed to create PSBTs for transfers
         public string[] RootedKeyPaths { get; set; }
-
+[Newtonsoft.Json.JsonIgnore]
+[JsonIgnore]
         public RootedKeyPath[] ParsedRootedKeyPaths
         {
             get

@@ -203,6 +203,7 @@ namespace PrivatePond.Tests
                 NetworkType = NetworkType.Regtest,
 
                 EnablePayjoinDeposits = false,
+                MinimumConfirmations = 1,
                 Wallets = new WalletOption[]
                 {
                     new WalletOption()
@@ -280,6 +281,62 @@ namespace PrivatePond.Tests
                 Assert.Equal(user1deposit1txid.ToString(), usedHistory.History.First().TransactionId);
                 Assert.Equal(user1deposit1txamt.ToDecimal(MoneyUnit.BTC), usedHistory.History.First().Value);
                 Assert.False(usedHistory.History.First().Confirmed);
+
+                await RpcClient.GenerateAsync(1);
+                var segwitWalletId = "";
+                await Eventually(async () =>
+                {
+                    resp = await app.Item2.GetAsync("api/v1/deposits/users/user1/history");
+                    var user1DepositRequestHistory1 = await GetJson<List<DepositRequestData>>(resp);
+                    var usedHistory =
+                        user1DepositRequestHistory1.Single(data => data.Destination == segwitFirstAddr.ToString());
+                    segwitWalletId = usedHistory.WalletId;
+                    Assert.True(usedHistory.History.First().Confirmed);
+                });
+                
+                //paying to same address will require an approval from api as we need to discourage address reuse
+                
+                var user1deposit2txamt = Money.Satoshis(30000m);
+                var user1deposit2txid = await RpcClient.SendToAddressAsync(
+                    BitcoinAddress.Create(user1DepositRequest2[0].Destination, Network.RegTest),
+                    user1deposit2txamt);
+                await RpcClient.GenerateAsync(1);
+                await Eventually(async () =>
+                {
+                    resp = await app.Item2.GetAsync($"api/v1/wallets/{segwitWalletId}/transactions");
+                    var segwitWalletTxs = await GetJson<List<WalletTransaction>>(resp);
+                    Assert.Equal(2, segwitWalletTxs.Count);
+                    Assert.Contains(segwitWalletTxs, transaction => transaction.InactiveDepositRequest is false && 
+                                                                   transaction.Amount == user1deposit1txamt.ToDecimal(MoneyUnit.BTC) &&
+                                                                   transaction.WalletId == segwitWalletId &&
+                                                                   transaction.Confirmations == 2&&
+                                                                   transaction.Status is WalletTransaction.WalletTransactionStatus.Confirmed &&
+                                                                   transaction.OutPoint.Hash == user1deposit1txid
+);
+                    var inactivedeposit = segwitWalletTxs.Single(transaction =>
+                        transaction.InactiveDepositRequest is true &&
+                        transaction.Amount == user1deposit2txamt.ToDecimal(MoneyUnit.BTC) &&
+                        transaction.WalletId == segwitWalletId &&
+                        transaction.Confirmations == 1 &&
+                        transaction.Status is WalletTransaction.WalletTransactionStatus.RequiresApproval &&
+                        transaction.OutPoint.Hash == user1deposit2txid);
+                    
+                    //random rout values should 404!
+                    resp = await app.Item2.PostAsync($"api/v1/wallets/abcd/transactions/{inactivedeposit.Id}/approve", new StringContent(""));
+                    Assert.False(resp.IsSuccessStatusCode);
+                    resp = await app.Item2.PostAsync($"api/v1/wallets/{segwitWalletId}/transactions/abcd/approve", new StringContent(""));
+                    Assert.False(resp.IsSuccessStatusCode);
+                    
+                    resp = await app.Item2.PostAsync($"api/v1/wallets/{segwitWalletId}/transactions/{inactivedeposit.Id}/approve", new StringContent(""));
+                    resp.EnsureSuccessStatusCode();
+
+                    resp = await app.Item2.GetAsync($"api/v1/wallets/{segwitWalletId}/transactions");
+                    segwitWalletTxs = await GetJson<List<WalletTransaction>>(resp);
+                    Assert.All(segwitWalletTxs, transaction =>
+                    {
+                        Assert.Equal(WalletTransaction.WalletTransactionStatus.Confirmed, transaction.Status);
+                    });
+                });
             }
         }
     }

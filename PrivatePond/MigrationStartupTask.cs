@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,10 @@ namespace PrivatePond
             {
                 _logger.LogInformation($"Migrating database to latest version");
                 await using var context = _privatePondDbContext.CreateDbContext();
+                var pendingMigrations = await context.Database.GetPendingMigrationsAsync(cancellationToken);
+                _logger.LogInformation(pendingMigrations.Any()
+                    ? $"Running migrations: {string.Join(", ", pendingMigrations)}"
+                    : $"Database already at latest version");
                 await context.Database.MigrateAsync(cancellationToken);
             }
             catch (Exception e)

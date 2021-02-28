@@ -44,7 +44,6 @@ namespace PrivatePond.Controllers
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            await _walletService.WaitUntilWalletsLoaded();
             await ClearInternalPendingRequests(cancellationToken);
 
             _ = ProcessTransferRequestsWithHotWallet(cancellationToken);
@@ -151,6 +150,7 @@ namespace PrivatePond.Controllers
 
         private async Task ProcessTransferRequestsWithHotWallet(CancellationToken token)
         {
+            await _walletService.WaitUntilWalletsLoaded();
             while (!token.IsCancellationRequested)
             {
                 try

@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using BTCPayServer.BIP78.Sender;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NBitcoin;
 using NBitcoin.OpenAsset;
+using NBitcoin.Payment;
 using NBitcoin.RPC;
+using NBXplorer;
+using NBXplorer.DerivationStrategy;
+using NBXplorer.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using PrivatePond.Controllers;
@@ -175,8 +180,12 @@ namespace PrivatePond.Tests
                     await action.Invoke();
                     break;
                 }
-                catch (XunitException e)
+                catch (Exception e)
                 {
+                    if (tries == maxTries)
+                    {
+                        throw;
+                    }
                 }
 
                 tries++;
@@ -198,7 +207,8 @@ namespace PrivatePond.Tests
             var segwitp2shFirstAddr = seed.DeriveExtKey().Derive(segwitp2shKeyPath).Neuter().Derive(new KeyPath("0/0"))
                 .PubKey
                 .GetAddress(ScriptPubKeyType.SegwitP2SH, Network.RegTest);
-            var app = CreateServerWithStandardSetup(new PrivatePondOptions()
+
+            var options = new PrivatePondOptions()
             {
                 NetworkType = NetworkType.Regtest,
 
@@ -220,7 +230,8 @@ namespace PrivatePond.Tests
                         RootedKeyPaths = new[] {segwitp2shKeyPath.ToString()}
                     }
                 }
-            });
+            };
+            var app = CreateServerWithStandardSetup(options);
             using (app.Item1)
             {
                 var resp = await app.Item2.GetAsync("api/v1/deposits/users/user1");
@@ -230,6 +241,13 @@ namespace PrivatePond.Tests
                 //ensure that the order is correct
                 Assert.Equal(segwitFirstAddr.ToString(), user1DepositRequest1[0].Destination);
                 Assert.Equal(segwitp2shFirstAddr.ToString(), user1DepositRequest1[1].Destination);
+
+                Assert.All(user1DepositRequest1,
+                    data =>
+                    {
+                        Assert.False(new BitcoinUrlBuilder(data.PaymentLink, Network.RegTest).UnknowParameters
+                            .ContainsKey("pj"));
+                    });
 
                 //ensure all users have diff deposits
                 resp = await app.Item2.GetAsync("api/v1/deposits/users/user2");
@@ -293,9 +311,9 @@ namespace PrivatePond.Tests
                     segwitWalletId = usedHistory.WalletId;
                     Assert.True(usedHistory.History.First().Confirmed);
                 });
-                
+
                 //paying to same address will require an approval from api as we need to discourage address reuse
-                
+
                 var user1deposit2txamt = Money.Satoshis(30000m);
                 var user1deposit2txid = await RpcClient.SendToAddressAsync(
                     BitcoinAddress.Create(user1DepositRequest2[0].Destination, Network.RegTest),
@@ -306,13 +324,15 @@ namespace PrivatePond.Tests
                     resp = await app.Item2.GetAsync($"api/v1/wallets/{segwitWalletId}/transactions");
                     var segwitWalletTxs = await GetJson<List<WalletTransaction>>(resp);
                     Assert.Equal(2, segwitWalletTxs.Count);
-                    Assert.Contains(segwitWalletTxs, transaction => transaction.InactiveDepositRequest is false && 
-                                                                   transaction.Amount == user1deposit1txamt.ToDecimal(MoneyUnit.BTC) &&
-                                                                   transaction.WalletId == segwitWalletId &&
-                                                                   transaction.Confirmations == 2&&
-                                                                   transaction.Status is WalletTransaction.WalletTransactionStatus.Confirmed &&
-                                                                   transaction.OutPoint.Hash == user1deposit1txid
-);
+                    Assert.Contains(segwitWalletTxs, transaction => transaction.InactiveDepositRequest is false &&
+                                                                    transaction.Amount ==
+                                                                    user1deposit1txamt.ToDecimal(MoneyUnit.BTC) &&
+                                                                    transaction.WalletId == segwitWalletId &&
+                                                                    transaction.Confirmations == 2 &&
+                                                                    transaction.Status is WalletTransaction
+                                                                        .WalletTransactionStatus.Confirmed &&
+                                                                    transaction.OutPoint.Hash == user1deposit1txid
+                    );
                     var inactivedeposit = segwitWalletTxs.Single(transaction =>
                         transaction.InactiveDepositRequest is true &&
                         transaction.Amount == user1deposit2txamt.ToDecimal(MoneyUnit.BTC) &&
@@ -320,22 +340,107 @@ namespace PrivatePond.Tests
                         transaction.Confirmations == 1 &&
                         transaction.Status is WalletTransaction.WalletTransactionStatus.RequiresApproval &&
                         transaction.OutPoint.Hash == user1deposit2txid);
-                    
+
                     //random rout values should 404!
-                    resp = await app.Item2.PostAsync($"api/v1/wallets/abcd/transactions/{inactivedeposit.Id}/approve", new StringContent(""));
+                    resp = await app.Item2.PostAsync($"api/v1/wallets/abcd/transactions/{inactivedeposit.Id}/approve",
+                        new StringContent(""));
                     Assert.False(resp.IsSuccessStatusCode);
-                    resp = await app.Item2.PostAsync($"api/v1/wallets/{segwitWalletId}/transactions/abcd/approve", new StringContent(""));
+                    resp = await app.Item2.PostAsync($"api/v1/wallets/{segwitWalletId}/transactions/abcd/approve",
+                        new StringContent(""));
                     Assert.False(resp.IsSuccessStatusCode);
-                    
-                    resp = await app.Item2.PostAsync($"api/v1/wallets/{segwitWalletId}/transactions/{inactivedeposit.Id}/approve", new StringContent(""));
+
+                    resp = await app.Item2.PostAsync(
+                        $"api/v1/wallets/{segwitWalletId}/transactions/{inactivedeposit.Id}/approve",
+                        new StringContent(""));
                     resp.EnsureSuccessStatusCode();
 
                     resp = await app.Item2.GetAsync($"api/v1/wallets/{segwitWalletId}/transactions");
                     segwitWalletTxs = await GetJson<List<WalletTransaction>>(resp);
-                    Assert.All(segwitWalletTxs, transaction =>
+                    Assert.All(segwitWalletTxs,
+                        transaction =>
+                        {
+                            Assert.Equal(WalletTransaction.WalletTransactionStatus.Confirmed, transaction.Status);
+                        });
+                });
+            }
+
+            options.EnablePayjoinDeposits = true;
+            options.PayjoinEndpointRoute = "https://yourwebsite.com/pj";
+            
+            app = CreateServerWithStandardSetup(options);
+            using (app.Item1)
+            {
+                var resp = await app.Item2.GetAsync("api/v1/deposits/users/user1");
+                var user1DepositRequest1 = await GetJson<List<DepositRequestData>>(resp);
+                BitcoinUrlBuilder bip21 = null;
+                Assert.All(user1DepositRequest1,
+                    data =>
                     {
-                        Assert.Equal(WalletTransaction.WalletTransactionStatus.Confirmed, transaction.Status);
+                        if (bip21 is null)
+                        {
+                            bip21 = new BitcoinUrlBuilder(data.PaymentLink, Network.RegTest);
+                        }
+                        Assert.True(new BitcoinUrlBuilder(data.PaymentLink, Network.RegTest).UnknowParameters
+                            .TryGetValue("pj", out var pjendoint));
+                        Assert.Equal(options.PayjoinEndpointRoute, pjendoint);
+
                     });
+
+                var explorerClient = app.Item1.Services.GetRequiredService<ExplorerClient>();
+                var wallet = await explorerClient.GenerateWalletAsync(new GenerateWalletRequest()
+                {
+                    SavePrivateKeys = true,
+                    ScriptPubKeyType = ScriptPubKeyType.Segwit
+                });
+                var walletAddr = await explorerClient.GetUnusedAsync(wallet.DerivationScheme, DerivationFeature.Deposit, 0, true);
+                await RpcClient.SendToAddressAsync(walletAddr.Address, new Money(0.01m, MoneyUnit.BTC));
+                await RpcClient.GenerateAsync(2);
+                
+                bip21.UnknowParameters["pj"] = new Uri(app.Item2.BaseAddress, "pj").ToString();
+                await Eventually(async () =>
+                {
+                    Assert.Equal(0.01m,
+                        ((Money) (await explorerClient.GetBalanceAsync(wallet.DerivationScheme)).Confirmed).ToDecimal(
+                            MoneyUnit.BTC));
+                });
+                var psbtResponse = await explorerClient.CreatePSBTAsync(wallet.DerivationScheme, new CreatePSBTRequest()
+                {
+                    IncludeGlobalXPub = false,
+                    FeePreference = new FeePreference()
+                    {
+                        FallbackFeeRate = new FeeRate(20m)
+                    },
+                    Destinations = new List<CreatePSBTDestination>()
+                    {
+                        new CreatePSBTDestination()
+                        {
+                            Amount = new Money(0.001m, MoneyUnit.BTC),
+                            Destination = bip21.Address
+                        }
+                    }
+                });
+
+                var originalPSBT = psbtResponse.PSBT;
+                originalPSBT = originalPSBT.SignAll(wallet.DerivationScheme, wallet.AccountHDKey, wallet.AccountKeyPath);
+                
+                var pjClient = new PayjoinClient();
+                var payjoinPSBT = await pjClient.RequestPayjoin(bip21,
+                    new NBXplorerPayjoinWallet(wallet.DerivationScheme, new[] {wallet.AccountKeyPath}), originalPSBT, CancellationToken.None);
+                payjoinPSBT = payjoinPSBT.SignAll(wallet.DerivationScheme, wallet.AccountHDKey, wallet.AccountKeyPath).Finalize();
+                Assert.True((await explorerClient.BroadcastAsync(payjoinPSBT.ExtractTransaction())).Success);
+
+                await Eventually(async () =>
+                {
+
+                    resp = await app.Item2.GetAsync("api/v1/deposits/users/user1/history");
+                    user1DepositRequest1 = await GetJson<List<DepositRequestData>>(resp);
+                    var payjoinedDeposit =
+                        user1DepositRequest1.SingleOrDefault(data => data.Destination == bip21.Address.ToString());
+                    Assert.NotNull(payjoinedDeposit);
+                    var history = Assert.Single(payjoinedDeposit.History);
+                    Assert.Equal(0.0001m, history.Value);
+                    Assert.NotNull(history.PayjoinValue);
+                    Assert.Equal(payjoinPSBT.ExtractTransaction().GetHash().ToString(), history.TransactionId);
                 });
             }
         }

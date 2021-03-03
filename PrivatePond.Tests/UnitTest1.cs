@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +17,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NBitcoin;
+using NBitcoin.Altcoins.Elements;
 using NBitcoin.OpenAsset;
 using NBitcoin.Payment;
 using NBitcoin.RPC;
@@ -150,54 +153,9 @@ namespace PrivatePond.Tests
             }
         }
 
-        private string RandomDbName()
-        {
-            return Guid.NewGuid().ToString().Replace("-", "");
-        }
-
-        private static RPCClient RpcClient = new RPCClient(new RPCCredentialString()
-        {
-            Server = "http://localhost:65468",
-            UserPassword = new NetworkCredential("ceiwHEbqWI83", "DwubwWsoo3")
-        }, "http://localhost:65468", Network.RegTest);
-
-        private async Task<T> GetJson<T>(HttpResponseMessage message)
-        {
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-            };
-            message.EnsureSuccessStatusCode();
-            return JsonSerializer.Deserialize<T>(await message.Content.ReadAsStringAsync(), options);
-        }
-
-        private async Task Eventually(Func<Task> action, int maxTries = 5)
-        {
-            int tries = 0;
-            while (tries < maxTries)
-            {
-                try
-                {
-                    await action.Invoke();
-                    break;
-                }
-                catch (Exception e)
-                {
-                    if (tries == maxTries)
-                    {
-                        throw;
-                    }
-                }
-
-                tries++;
-                await Task.Delay(500 * tries);
-            }
-        }
-
         [Fact]
         public async Task DepositTests()
         {
-            // test1: generate deposit addresses correctly
             var seed = new Mnemonic(Wordlist.English);
             var seedFingerprint = seed.DeriveExtKey().GetPublicKey().GetHDFingerPrint();
             var segwitKeyPath = new RootedKeyPath(seedFingerprint, new KeyPath($"m/84'/1'/0'"));
@@ -514,6 +472,292 @@ namespace PrivatePond.Tests
             
         }
 
+        [Fact]
+        public async Task TransferTests()
+        {
+            var seed = new Mnemonic(Wordlist.English);
+            var seedFingerprint = seed.DeriveExtKey().GetPublicKey().GetHDFingerPrint();
+            var segwitKeyPath = new RootedKeyPath(seedFingerprint, new KeyPath($"m/84'/1'/0'"));
+            var segwitp2shKeyPath = new RootedKeyPath(seedFingerprint, new KeyPath($"m/49'/1'/0'"));
+            var segwitXpriv = seed.DeriveExtKey().Derive(segwitKeyPath);
+            var segwitXpub = segwitXpriv.Neuter();
+            var segwitFirstAddr = segwitXpub.Derive(new KeyPath("0/0")).PubKey
+                .GetAddress(ScriptPubKeyType.Segwit, Network.RegTest);
+
+            var segwitp2shXpriv = seed.DeriveExtKey().Derive(segwitp2shKeyPath);
+            var segwitp2shXpub = segwitp2shXpriv.Neuter();
+            var segwitp2shFirstAddr = segwitp2shXpub.Derive(new KeyPath("0/0"))
+                .PubKey
+                .GetAddress(ScriptPubKeyType.SegwitP2SH, Network.RegTest);
+
+            var options = new PrivatePondOptions()
+            {
+                NetworkType = NetworkType.Regtest,
+
+                EnablePayjoinDeposits = false,
+                MinimumConfirmations = 1,
+                KeysDir = "keys",
+                BatchTransfersEvery = 0,//please don't do this in production, you will never be able to replenish from cold wallet since txs will be ongoing
+                Wallets = new WalletOption[]
+                {
+                    new WalletOption()
+                    {
+                        DerivationScheme = segwitXpub.ToString(Network.RegTest),
+                        AllowForDeposits = true,
+                        RootedKeyPaths = new[] {segwitKeyPath.ToString()},
+                        AllowForTransfers = true,
+                    },
+                    new WalletOption()
+                    {
+                        DerivationScheme = segwitp2shXpub
+                            .ToString(Network.RegTest) + "-[p2sh]",
+                        AllowForDeposits = true,
+                        RootedKeyPaths = new[] {segwitp2shKeyPath.ToString()},
+                        AllowForTransfers = true,
+                    }
+                }
+            };
+            var app = CreateServerWithStandardSetup(options);
+            using (app.Item1)
+            {
+                //the keys dir should have been created on startup if it did not exist
+                Assert.True(Directory.Exists(options.KeysDir));
+
+                await File.WriteAllTextAsync(Path.Combine(options.KeysDir, segwitXpub.ToString(Network.RegTest)), segwitXpriv.ToString(Network.RegTest));
+                await File.WriteAllTextAsync(Path.Combine(options.KeysDir, segwitp2shXpub.ToString(Network.RegTest)), segwitp2shXpriv.ToString(Network.RegTest));
+                await Eventually(async () =>
+                {
+                    //the priv keys get deleted and an encrypted version should be created instead
+                    Assert.False(File.Exists(Path.Combine(options.KeysDir, segwitXpub.ToString(Network.RegTest))));
+                    Assert.False(File.Exists(Path.Combine(options.KeysDir, segwitp2shXpub.ToString(Network.RegTest))));
+                    Assert.True(File.Exists(Path.Combine(options.KeysDir,
+                        segwitXpub.ToString(Network.RegTest) + "encrypted")));
+                    Assert.True(File.Exists(Path.Combine(options.KeysDir,
+                        segwitp2shXpub.ToString(Network.RegTest) + "encrypted")));
+                });
+                
+                var walletService = app.Item1.Services.GetService<WalletService>();
+                var explorerClient = app.Item1.Services.GetService<ExplorerClient>();
+                options = app.Item1.Services.GetRequiredService<IOptions<PrivatePondOptions>>().Value;
+                foreach (var walletOption in options.Wallets)
+                {
+                    if (walletOption.DerivationScheme.Contains(segwitXpub.ToString(Network.RegTest)) ||
+                        walletOption.DerivationScheme.Contains(segwitp2shXpub.ToString(Network.RegTest)))
+                    {
+                       
+                        Assert.True(
+                            await walletService.IsHotWallet(walletOption.WalletId));
+                    }
+                    else
+                    {
+                        Assert.False(
+                            await walletService.IsHotWallet(walletOption.WalletId));
+                    }
+                }    
+                
+                var resp = await app.Item2.GetAsync("api/v1/deposits/users/user1");
+                var user1DepositRequest1 = await GetJson<List<DepositRequestData>>(resp);
+                foreach (var depositRequestData in user1DepositRequest1)
+                {
+                    await RpcClient.SendToAddressAsync(
+                        BitcoinAddress.Create(depositRequestData.Destination, Network.RegTest),
+                        new Money(0.01m, MoneyUnit.BTC));
+                }
+                await RpcClient.GenerateAsync(2);
+                //there should be 0.02m spendable on transfers
+                
+                
+                //this one wont be able to be processed until there's funds to process it
+                var request = new RequestTransferRequest()
+                {
+                    Amount = 0.1m,
+                    Destination = (await RpcClient.GetNewAddressAsync()).ToString()
+                };
+                var bigTransferRequest  = await
+                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                Assert.Equal(bigTransferRequest.Amount, request.Amount);
+                Assert.Equal(bigTransferRequest.Destination, request.Destination);
+                Assert.Equal(TransferStatus.Pending, bigTransferRequest.Status);
+                
+                Assert.Equal(JsonSerializer.Serialize(bigTransferRequest), JsonSerializer.Serialize(await
+                    GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{bigTransferRequest.Id}"))));
+
+                //let's do 5 transfer requests of a total of 0.0015. This means it will spend through coins on both hot wallets
+                List<TransferRequestData> smallTransfers = new List<TransferRequestData>();
+                TransferRequestData smallTransferRequestData;
+                for (int j = 0; j < 5; j++)
+                {
+                    request = new RequestTransferRequest()
+                    {
+                        Amount = 0.0003m,
+                        Destination = (await RpcClient.GetNewAddressAsync()).ToString()
+                    };
+                    
+                    smallTransferRequestData = await
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                    smallTransfers.Add(smallTransferRequestData);
+                }
+                
+                //let's also try two other requests of 0.0001 each but using BIP21 formats
+
+                request = new RequestTransferRequest()
+                {
+                    Amount = 0.0001m,
+                    Destination = $"bitcoin:{(await RpcClient.GetNewAddressAsync())}"
+                };
+                    
+                smallTransferRequestData = await
+                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                smallTransfers.Add(smallTransferRequestData);
+                request = new RequestTransferRequest()
+                {
+                    Destination = $"bitcoin:{(await RpcClient.GetNewAddressAsync())}?amount=0.0001m"
+                };
+                    
+                smallTransferRequestData = await
+                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                smallTransfers.Add(smallTransferRequestData);
+                
+                await Eventually(async () =>
+                {
+                    foreach (var smallTransfer in smallTransfers)
+                    {
+                        var tr = await
+                            GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{smallTransfer.Id}"));
+                        Assert.Equal(TransferStatus.Processing, tr.Status);
+                        Assert.False(string.IsNullOrEmpty(tr.TransactionHash));
+                        var tx = await explorerClient.GetTransactionAsync(uint256.Parse(tr.TransactionHash));
+                        Assert.Equal(0, tx.Confirmations );
+                        Assert.NotNull(tx.Transaction.Outputs.Single(txOut => txOut.IsTo(BitcoinAddress.Create(
+                                                                                  HelperExtensions.GetAddress(tr.Destination, Network.RegTest, out _, out _,
+                                                                                      out _), Network.RegTest)) &&
+                                                                              txOut.Value.ToDecimal(MoneyUnit.BTC) == tr.Amount));
+                    }
+                });
+
+                await RpcClient.GenerateAsync(2);
+                await Eventually(async () =>
+                {
+                    foreach (var smallTransfer in smallTransfers)
+                    {
+                        var tr = await
+                            GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{smallTransfer.Id}"));
+                        Assert.Equal(TransferStatus.Completed, tr.Status);
+                    }
+                });
+                
+                //while all the small ones went through, the big one stuck. We dont let a huge request block smaller ones that could be done in the meantime
+                Assert.Equal(JsonSerializer.Serialize(bigTransferRequest), JsonSerializer.Serialize(await
+                    GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{bigTransferRequest.Id}"))));
+                
+                //we also allow BIP21 destination in transfers
+                request = new RequestTransferRequest()
+                {
+                    Amount = 0.0004m,
+                    Destination = $"bitcoin:{(await RpcClient.GetNewAddressAsync())}?amount=0.003"
+                };
+                //if amount also specified, needs to match the bip21 amount 
+                await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                {
+                    await
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                });
+                request = new RequestTransferRequest()
+                {
+                    Destination = $"bitcoin:{(await RpcClient.GetNewAddressAsync())}?amount=0.00"
+                };
+                await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                {
+                    await
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                });
+                request = new RequestTransferRequest()
+                {
+                    Destination = $"bitcoin:{(await RpcClient.GetNewAddressAsync())}"
+                };
+                await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                {
+                    await
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                });
+                
+                //ok let's fill up the bank and see if the big request will now be processed
+                foreach (var depositRequestData in user1DepositRequest1)
+                {
+                    await RpcClient.SendToAddressAsync(
+                        BitcoinAddress.Create(depositRequestData.Destination, Network.RegTest),
+                        new Money(0.055m, MoneyUnit.BTC));
+                }
+                await RpcClient.GenerateAsync(2);
+                
+                await Eventually(async () =>
+                {
+                    var tr = await
+                        GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{bigTransferRequest.Id}"));
+                    Assert.Equal(TransferStatus.Processing, tr.Status);
+                    Assert.False(string.IsNullOrEmpty(tr.TransactionHash));
+                    var tx = await explorerClient.GetTransactionAsync(uint256.Parse(tr.TransactionHash));
+                    Assert.Equal(0, tx.Confirmations );
+                    Assert.NotNull(tx.Transaction.Outputs.Single(txOut => txOut.IsTo(BitcoinAddress.Create(
+                                                                              HelperExtensions.GetAddress(tr.Destination, Network.RegTest, out _, out _,
+                                                                                  out _), Network.RegTest)) &&
+                                                                          txOut.Value.ToDecimal(MoneyUnit.BTC) == tr.Amount));
+                });
+
+                await RpcClient.GenerateAsync(2);
+                await Eventually(async () =>
+                {
+                    var tr = await
+                        GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{bigTransferRequest.Id}"));
+                    Assert.Equal(TransferStatus.Completed, tr.Status);
+                });
+            }
+        }
+
+
+        private string RandomDbName()
+        {
+            return Guid.NewGuid().ToString().Replace("-", "");
+        }
+
+        private static RPCClient RpcClient = new RPCClient(new RPCCredentialString()
+        {
+            Server = "http://localhost:65468",
+            UserPassword = new NetworkCredential("ceiwHEbqWI83", "DwubwWsoo3")
+        }, "http://localhost:65468", Network.RegTest);
+
+        private async Task<T> GetJson<T>(HttpResponseMessage message)
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+            };
+            message.EnsureSuccessStatusCode();
+            return JsonSerializer.Deserialize<T>(await message.Content.ReadAsStringAsync(), options);
+        }
+
+        private async Task Eventually(Func<Task> action, int maxTries = 5)
+        {
+            int tries = 0;
+            while (tries < maxTries)
+            {
+                try
+                {
+                    await action.Invoke();
+                    break;
+                }
+                catch (Exception e)
+                {
+                    if (tries == maxTries)
+                    {
+                        throw;
+                    }
+                }
+
+                tries++;
+                await Task.Delay(500 * tries);
+            }
+        }
         public class PayjoinTestCommunicator : HttpClientPayjoinServerCommunicator
         {
             private readonly WebApplicationFactory<Startup> _client;

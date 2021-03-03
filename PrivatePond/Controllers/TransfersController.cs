@@ -52,14 +52,20 @@ namespace PrivatePond.Controllers
                         HelperExtensions.GetAddress(request.Destination, _network, out var scriptPubKeyType,
                             out var bip21Amount, out _);
 
-                    if (bip21Amount.HasValue && request.Amount.HasValue && request.Amount != bip21Amount.Value)
+                    if (bip21Amount.HasValue && request.Amount.HasValue && request.Amount != bip21Amount.Value && bip21Amount.Value != 0)
                     {
                         ModelState.AddModelError((RequestTransferRequest x) => x.Amount,
                             "An amount was specified for this transfer but the destination is a payment link with a different amount");
                     }
-                    else if (bip21Amount.HasValue)
+                    else if (bip21Amount.HasValue && bip21Amount.Value > 0)
                     {
                         request.Amount = bip21Amount;
+                    }
+
+                    if (request.Amount <= 0)
+                    {
+                        ModelState.AddModelError((RequestTransferRequest x) => x.Amount,
+                            "An amount greater than 0 must be specified or needs to be present in the payment link");
                     }
 
                     if (request.Express && !_options.Value.EnableExternalExpressTransfers)

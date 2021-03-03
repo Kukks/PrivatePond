@@ -97,9 +97,11 @@ namespace PrivatePond.Controllers
             utxos = utxos.Where(u => !prevOuts.Contains(u.Outpoint)).ToArray();
             Array.Sort(utxos, CoinDeterministicComparer.Instance);
 
-            if (_options.Value.BatchTransfersInPayjoin)
+            if (_options.Value.BatchTransfersInPayjoin && false)
             {
+                //not implemented for now, this will be able to batch pending transfers inside this deposit!
                 await _transferRequestService.ProcessTask.Task;
+                
             }
             else
             {
@@ -232,7 +234,11 @@ namespace PrivatePond.Controllers
                     newPsbt = resp.PSBT;
                 }
               
-                newPsbt = await _walletService.SignWithHotWallets(context.HotWallets.Keys.ToArray(), newPsbt);
+                newPsbt = await _walletService.SignWithHotWallets(context.HotWallets.Keys.ToArray(), newPsbt, new SigningOptions()
+                {
+                    EnforceLowR = enforcedLowR,
+                    SigHash = SigHash.All
+                });
                 var ourCoins = new List<Coin>();
                 foreach (var coin in selectedUTXOs.Select(o => o.Value))
                 {
@@ -242,6 +248,18 @@ namespace PrivatePond.Controllers
                     signedInput.FinalizeInput();
                     newTx.Inputs[signedInput.Index].WitScript =
                         newPsbt.Inputs[(int)signedInput.Index].FinalScriptWitness;
+                }
+                foreach (var newPsbtInput in newPsbt.Inputs)
+                {
+                    if (!newPsbtInput.IsFinalized())
+                    {
+                        newPsbtInput.WitnessUtxo = null;
+                        newPsbtInput.NonWitnessUtxo = null;
+                    }
+                }
+                foreach (var newPsbtOutput in newPsbt.Outputs)
+                {
+                    newPsbtOutput.HDKeyPaths.Clear();
                 }
                 
                 context.PayjoinReceiverWalletProposal = new PayjoinReceiverWalletProposal()
@@ -349,13 +367,12 @@ namespace PrivatePond.Controllers
 
         protected override async Task<PayjoinPaymentRequest> FindMatchingPaymentRequests(PrivatePondPayjoinProposalContext context)
         {
-            var outputAddressMap = context.OriginalPSBT.Outputs.ToDictionary(output => output,
-                output => output.ScriptPubKey.GetDestinationAddress(_network).ToString());
+            var outputAddressMap = context.OriginalPSBT.Outputs.Select(output => (Output: output, Address: output.ScriptPubKey.GetDestinationAddress(_network))).ToList();
             await using var dbContext = _dbContextFactory.CreateDbContext();
             var deposits = await _depositService.GetDepositRequests(new DepositRequestQuery()
             {
                 Active = true,
-                Address = outputAddressMap.Values.Select(address => address.ToString()).ToArray()
+                Address = outputAddressMap.Select(address => address.Address.ToString()).ToArray()
             }, CancellationToken.None);
             if (!deposits.Any())
             {
@@ -363,7 +380,7 @@ namespace PrivatePond.Controllers
             }
             
             var receiverInputsType = context.OriginalPSBT.GetInputsScriptPubKeyType();
-            var (wallets, utxos) = await _transferRequestService.GetHotWallets();
+            var (wallets, utxos) = await _walletService.GetHotWallets("payjoin");
             wallets = wallets.Where(pair => pair.Value.ScriptPubKeyType() == receiverInputsType).ToDictionary(pair => pair.Key,  pair => pair.Value);
             if (!wallets.Any())
             {
@@ -381,11 +398,11 @@ namespace PrivatePond.Controllers
             var possibleRequests = new Dictionary<string,PayjoinPaymentRequest>();
             foreach (var depositRequest in deposits.OrderBy(request => request.Address))
             {
-                var matchedOutput = outputAddressMap.First(pair => pair.Value == depositRequest.Address);
+                var matchedOutput = outputAddressMap.First(pair => pair.Address.ToString() == depositRequest.Address);
                 possibleRequests.Add(depositRequest.Id,new PayjoinPaymentRequest()
                 {
-                    Amount = matchedOutput.Key.Value,
-                    Destination = matchedOutput.Key.ScriptPubKey.GetDestinationAddress(_network)
+                    Amount = matchedOutput.Output.Value,
+                    Destination = matchedOutput.Address
                 });
             }
 

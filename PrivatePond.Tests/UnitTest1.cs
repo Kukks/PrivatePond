@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -197,14 +198,18 @@ namespace PrivatePond.Tests
         public async Task DepositTests()
         {
             // test1: generate deposit addresses correctly
-            var dbName = RandomDbName();
             var seed = new Mnemonic(Wordlist.English);
             var seedFingerprint = seed.DeriveExtKey().GetPublicKey().GetHDFingerPrint();
             var segwitKeyPath = new RootedKeyPath(seedFingerprint, new KeyPath($"m/84'/1'/0'"));
             var segwitp2shKeyPath = new RootedKeyPath(seedFingerprint, new KeyPath($"m/49'/1'/0'"));
-            var segwitFirstAddr = seed.DeriveExtKey().Derive(segwitKeyPath).Neuter().Derive(new KeyPath("0/0")).PubKey
+            var segwitXpriv = seed.DeriveExtKey().Derive(segwitKeyPath);
+            var segwitXpub = segwitXpriv.Neuter();
+            var segwitFirstAddr = segwitXpub.Derive(new KeyPath("0/0")).PubKey
                 .GetAddress(ScriptPubKeyType.Segwit, Network.RegTest);
-            var segwitp2shFirstAddr = seed.DeriveExtKey().Derive(segwitp2shKeyPath).Neuter().Derive(new KeyPath("0/0"))
+
+            var segwitp2shXpriv = seed.DeriveExtKey().Derive(segwitp2shKeyPath);
+            var segwitp2shXpub = segwitp2shXpriv.Neuter();
+            var segwitp2shFirstAddr = segwitp2shXpub.Derive(new KeyPath("0/0"))
                 .PubKey
                 .GetAddress(ScriptPubKeyType.SegwitP2SH, Network.RegTest);
 
@@ -214,17 +219,18 @@ namespace PrivatePond.Tests
 
                 EnablePayjoinDeposits = false,
                 MinimumConfirmations = 1,
+                KeysDir = "keys",
                 Wallets = new WalletOption[]
                 {
                     new WalletOption()
                     {
-                        DerivationScheme = seed.DeriveExtKey().Derive(segwitKeyPath).Neuter().ToString(Network.RegTest),
+                        DerivationScheme = segwitXpub.ToString(Network.RegTest),
                         AllowForDeposits = true,
                         RootedKeyPaths = new[] {segwitKeyPath.ToString()}
                     },
                     new WalletOption()
                     {
-                        DerivationScheme = seed.DeriveExtKey().Derive(segwitp2shKeyPath).Neuter()
+                        DerivationScheme = segwitp2shXpub
                             .ToString(Network.RegTest) + "-[p2sh]",
                         AllowForDeposits = true,
                         RootedKeyPaths = new[] {segwitp2shKeyPath.ToString()}
@@ -364,6 +370,7 @@ namespace PrivatePond.Tests
                 });
             }
 
+            //payjoin tests
             options.EnablePayjoinDeposits = true;
             options.PayjoinEndpointRoute = "https://yourwebsite.com/pj";
             
@@ -422,9 +429,58 @@ namespace PrivatePond.Tests
 
                 var originalPSBT = psbtResponse.PSBT;
                 originalPSBT = originalPSBT.SignAll(wallet.DerivationScheme, wallet.AccountHDKey, wallet.AccountKeyPath);
+                var payjoinServerCommunicator = new PayjoinTestCommunicator(app.Item1);
                 
-                var pjClient = new PayjoinClient();
-                var payjoinPSBT = await pjClient.RequestPayjoin(bip21,
+                var pjClient = new PayjoinClient(payjoinServerCommunicator);
+                var walletService = app.Item1.Services.GetService<WalletService>();
+                //confirm that all the wallets arent hot
+
+                options = app.Item1.Services.GetRequiredService<IOptions<PrivatePondOptions>>().Value;
+                foreach (var walletOption in options.Wallets)
+                {
+                    Assert.False(
+                        await walletService.IsHotWallet(walletOption.WalletId));
+                }    
+                
+                //we did not configure hot wallets, so payjoin will never be available
+                await Assert.ThrowsAsync<PayjoinReceiverException>(async () => await pjClient.RequestPayjoin(bip21,
+                    new NBXplorerPayjoinWallet(wallet.DerivationScheme, new[] {wallet.AccountKeyPath}), originalPSBT,
+                    CancellationToken.None));
+
+               //lets configure hot wallets!
+               
+               //the keys dir should have been created on startup if it did not exist
+               Assert.True(Directory.Exists(options.KeysDir));
+
+               await File.WriteAllTextAsync(Path.Combine(options.KeysDir, segwitXpub.ToString(Network.RegTest)), segwitXpriv.ToString(Network.RegTest));
+               await File.WriteAllTextAsync(Path.Combine(options.KeysDir, segwitp2shXpub.ToString(Network.RegTest)), segwitp2shXpriv.ToString(Network.RegTest));
+               await Eventually(async () =>
+               {
+                   //the priv keys get deleted and an encrypted version should be created instead
+                   Assert.False(File.Exists(Path.Combine(options.KeysDir, segwitXpub.ToString(Network.RegTest))));
+                   Assert.False(File.Exists(Path.Combine(options.KeysDir, segwitp2shXpub.ToString(Network.RegTest))));
+                   Assert.True(File.Exists(Path.Combine(options.KeysDir,
+                       segwitXpub.ToString(Network.RegTest) + "encrypted")));
+                   Assert.True(File.Exists(Path.Combine(options.KeysDir,
+                       segwitp2shXpub.ToString(Network.RegTest) + "encrypted")));
+               });
+               foreach (var walletOption in options.Wallets)
+               {
+                   if (walletOption.DerivationScheme.Contains(segwitXpub.ToString(Network.RegTest)) ||
+                       walletOption.DerivationScheme.Contains(segwitp2shXpub.ToString(Network.RegTest)))
+                   {
+                       
+                       Assert.True(
+                           await walletService.IsHotWallet(walletOption.WalletId));
+                   }
+                   else
+                   {
+                       Assert.False(
+                           await walletService.IsHotWallet(walletOption.WalletId));
+                   }
+               }    
+               
+               var payjoinPSBT = await pjClient.RequestPayjoin(bip21,
                     new NBXplorerPayjoinWallet(wallet.DerivationScheme, new[] {wallet.AccountKeyPath}), originalPSBT, CancellationToken.None);
                 payjoinPSBT = payjoinPSBT.SignAll(wallet.DerivationScheme, wallet.AccountHDKey, wallet.AccountKeyPath).Finalize();
                 Assert.True((await explorerClient.BroadcastAsync(payjoinPSBT.ExtractTransaction())).Success);
@@ -442,6 +498,33 @@ namespace PrivatePond.Tests
                     Assert.NotNull(history.PayjoinValue);
                     Assert.Equal(payjoinPSBT.ExtractTransaction().GetHash().ToString(), history.TransactionId);
                 });
+                
+                
+                //ok tested deposits, let's test the querying
+                resp = await app.Item2.GetAsync("api/v1/deposits");
+                var drs = await GetJson<List<DepositRequestData>>(resp);
+                Assert.Equal(2, drs.Count());
+                
+                resp = await app.Item2.GetAsync("api/v1/deposits?active=false");
+                drs = await GetJson<List<DepositRequestData>>(resp);
+                var dr = Assert.Single(drs);
+                Assert.False(dr.Active);
+                Assert.True(Assert.Single(dr.History).PayjoinValue.HasValue);
+            }
+            
+        }
+
+        public class PayjoinTestCommunicator : HttpClientPayjoinServerCommunicator
+        {
+            private readonly WebApplicationFactory<Startup> _client;
+
+            public PayjoinTestCommunicator(WebApplicationFactory<Startup> client)
+            {
+                _client = client;
+            }
+            protected override HttpClient CreateHttpClient(Uri uri)
+            {
+                return _client.CreateClient();
             }
         }
     }

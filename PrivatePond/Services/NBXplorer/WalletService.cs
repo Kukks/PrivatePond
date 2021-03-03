@@ -241,7 +241,31 @@ namespace PrivatePond.Controllers
         }
 
 
-       
+        public async Task<(Dictionary<string, DerivationStrategyBase> Wallets, Dictionary<string, Coin[]> UTXOS)>
+            GetHotWallets(string scope, CancellationToken token = default)
+        {
+            var allowed = _options.Value.Wallets.Where(option => (scope =="transfers" && option.AllowForTransfers) || (scope =="payjoin" && option.AllowForDeposits)).ToList();
+            var hotWalletTasks = allowed.ToDictionary(option => option.WalletId,
+                option => IsHotWallet(option.WalletId));
+            await Task.WhenAll(hotWalletTasks.Values);
+            hotWalletTasks = hotWalletTasks.Where(pair => pair.Value.Result)
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+
+
+            var hotWalletDerivationSchemes =
+                hotWalletTasks.ToDictionary(s => s.Key,
+                    s => GetDerivationsByWalletId(s.Key));
+            await Task.WhenAll(hotWalletDerivationSchemes.Values);
+
+            var walletUtxos = hotWalletTasks.Keys.ToDictionary(s => s,
+                s => _explorerClient.GetUTXOsAsync(hotWalletDerivationSchemes[s].Result, token)
+                    .ContinueWith(task => task.Result.GetUnspentCoins(),
+                        token));
+            await Task.WhenAll(walletUtxos.Values);
+            return (Wallets: hotWalletDerivationSchemes.ToDictionary(pair => pair.Key, pair => pair.Value.Result),
+                UTXOS: walletUtxos.ToDictionary(pair => pair.Key, pair => pair.Value.Result));
+        }
+        
         public async Task<List<WalletTransaction>> GetWalletTransactions(WalletTransactionQuery query,
             CancellationToken cancellationToken)
         {
@@ -465,7 +489,7 @@ namespace PrivatePond.Controllers
             };
         }
 
-        public async Task<PSBT> SignWithHotWallets(string[] walletIdsToSignWith, PSBT psbt)
+        public async Task<PSBT> SignWithHotWallets(string[] walletIdsToSignWith, PSBT psbt, SigningOptions signingOptions)
         {
             var resultingPSBT = psbt.Clone();
             
@@ -487,7 +511,7 @@ namespace PrivatePond.Controllers
                     }
 
                     var rootedKeyPath = walletOption.ParsedRootedKeyPaths.ElementAt(i);
-                    resultingPSBT = resultingPSBT.SignAll(deriv, key, rootedKeyPath);
+                    resultingPSBT = resultingPSBT.SignAll(deriv, key, rootedKeyPath, signingOptions);
                     i++;
                 }
             }

@@ -31,6 +31,10 @@ namespace PrivatePond.Controllers
         /// user id linked to this deposit request
         /// </summary>
         public string UserId { get; set; }
+        /// <summary>
+        /// if the deposit request is active
+        /// </summary>
+        public bool Active { get; set; }
     }
 
     public class DepositRequestDataItemPaymentItem

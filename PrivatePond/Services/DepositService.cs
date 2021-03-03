@@ -73,6 +73,7 @@ namespace PrivatePond.Controllers
                 Destination = request.Address,
                 Label = request.Id,
                 PaymentLink = $"bitcoin:{request.Address}{(_options.Value.EnablePayjoinDeposits? "?pj="+ _options.Value.PayjoinEndpointRoute: "")}",
+                Active = request.Active,
                 History = request?.WalletTransactions?.Select(transaction =>
                 {
                     var txid = transaction.OutPoint.Hash.ToString();
@@ -100,9 +101,6 @@ namespace PrivatePond.Controllers
             if (query.IncludeWalletTransactions)
             {
                 queryable = queryable.Include(request => request.WalletTransactions);
-            }
-            if (query.IncludePayjoinRecords)
-            {
                 queryable = queryable.Include(request => request.PayjoinRecords);
             }
 

@@ -11,6 +11,7 @@ using PrivatePond.Data;
 namespace PrivatePond.Controllers
 {
     [Route("api/v1/transfers")]
+    [ApiController]
     public class TransfersController : ControllerBase
     {
         private readonly TransferRequestService _transferRequestService;
@@ -44,7 +45,7 @@ namespace PrivatePond.Controllers
         [HttpPost("")]
         public async Task<ActionResult<TransferRequestData>> RequestTransfer(RequestTransferRequest request)
         {
-            if (!string.IsNullOrEmpty(request.Destination))
+             if (!string.IsNullOrEmpty(request.Destination))
             {
                 try
                 {
@@ -88,7 +89,7 @@ namespace PrivatePond.Controllers
 
             var result = await _transferRequestService.CreateTransferRequest(request);
             if (result is not null)
-                return Ok(result);
+                return await GetTransferRequestId(result.Id);
             return BadRequest("Could not create transfer.");
         }
 

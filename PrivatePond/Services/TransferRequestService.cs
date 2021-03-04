@@ -28,6 +28,7 @@ namespace PrivatePond.Controllers
         private readonly PayjoinClient _payjoinClient;
 
         public TaskCompletionSource ProcessTask { get; set; }
+        public TaskCompletionSource ProcessDelayWaiter { get; set; }
 
         public TransferRequestService(IDbContextFactory<PrivatePondDbContext> dbContextFactory,
             IOptions<PrivatePondOptions> options, ExplorerClient explorerClient, WalletService walletService,
@@ -40,6 +41,16 @@ namespace PrivatePond.Controllers
             _network = network;
             _logger = logger;
             _payjoinClient = payjoinClient;
+        }
+
+        public async Task SkipProcessWait()
+        {
+            var task = ProcessTask?.Task;
+            if (task is not null)
+            {
+                await task;
+            }
+            ProcessDelayWaiter.TrySetResult();
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -403,7 +414,8 @@ namespace PrivatePond.Controllers
 
                 delay:
                 ProcessTask.SetResult();
-                await Task.Delay(TimeSpan.FromMinutes(_options.Value.BatchTransfersEvery), token);
+                ProcessDelayWaiter = new TaskCompletionSource();
+                await Task.WhenAny(Task.Delay(TimeSpan.FromMinutes(_options.Value.BatchTransfersEvery), token), ProcessDelayWaiter.Task);
             }
         }
 
@@ -775,7 +787,7 @@ namespace PrivatePond.Controllers
                 Amount = request.Amount,
                 Destination = request.Destination,
                 Status = request.Status,
-                Timestamp = request.Timestamp,
+                Timestamp = request.Timestamp.ToUniversalTime(),
                 TransactionHash = request.SigningRequestId
             };
         }

@@ -11,7 +11,7 @@ namespace PrivatePond.Data
         public TransferStatus Status { get; set; }
         public decimal Amount { get; set; }
         public string Destination { get; set; }
-        public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset Timestamp { get; set; } 
         public TransferType TransferType { get; set; }
         public string SigningRequestId { get; set; }
 

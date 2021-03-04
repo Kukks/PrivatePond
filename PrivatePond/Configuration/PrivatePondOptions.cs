@@ -15,7 +15,7 @@ namespace PrivatePond.Data
         public int MinimumConfirmations { get; set; } = 6;
 
         //Transfers processed every x minutes
-        public int BatchTransfersEvery { get; set; }
+        public double BatchTransfersEvery { get; set; }
         
         //the ideal max amount of funds in percentage of the sum of total enabled wallet balances
         // public decimal? MaximumFunds { get; set; }

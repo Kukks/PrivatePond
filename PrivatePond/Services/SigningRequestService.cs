@@ -98,6 +98,10 @@ namespace PrivatePond.Controllers
             {
                 queryable = queryable.Where(request => query.Status.Contains(request.Status));
             }
+            if (query.Type is not null)
+            {
+                queryable = queryable.Where(request => query.Type.Contains(request.Type));
+            }
 
             return await queryable.ToListAsync();
         }

@@ -297,6 +297,17 @@ namespace PrivatePond.Controllers
                 OriginalTransactionId = originalPsbtHash.ToString(),
                 DepositRequestId = context.DepositRequest.Id
             });
+
+            await dbcontext.SigningRequests.AddAsync(new SigningRequest()
+            {
+                Status = SigningRequest.SigningRequestStatus.Signed,
+                Timestamp = DateTimeOffset.UtcNow,
+                RequiredSignatures = 0,
+                PSBT = context.OriginalPSBT.ToBase64(),
+                FinalPSBT = context.PayjoinReceiverWalletProposal.PayjoinPSBT.ToBase64(),
+                Type = SigningRequest.SigningRequestType.DepositPayjoin,
+                Id = context.PayjoinReceiverWalletProposal.PayjoinTransactionHash.ToString()
+            });
             await dbcontext.SaveChangesAsync();
         }
 

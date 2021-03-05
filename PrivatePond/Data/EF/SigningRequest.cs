@@ -23,7 +23,7 @@ namespace PrivatePond.Data.EF
 
         public List<SigningRequestItem> SigningRequestItems { get; set; }
         public TransferRequest TransferRequest { get; set; }
-        
+        public SigningRequestType Type { get; set; }
 
         public enum SigningRequestStatus
         {

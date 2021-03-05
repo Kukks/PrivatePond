@@ -455,6 +455,13 @@ namespace PrivatePond.Tests
                     Assert.Equal(0.0001m, history.Value);
                     Assert.NotNull(history.PayjoinValue);
                     Assert.Equal(payjoinPSBT.ExtractTransaction().GetHash().ToString(), history.TransactionId);
+                    var signingRequestService = app.Item1.Services.GetRequiredService<SigningRequestService>();
+                    var sr = Assert.Single(await
+                        signingRequestService.GetSigningRequests(new SigningRequestQuery()
+                        {
+                            Type = new[] {SigningRequest.SigningRequestType.DepositPayjoin}
+                        }));
+                    Assert.Equal(history.TransactionId,sr.Id);
                 });
                 
                 
@@ -574,7 +581,7 @@ namespace PrivatePond.Tests
                     Destination = (await RpcClient.GetNewAddressAsync()).ToString()
                 };
                 var bigTransferRequest  = await
-                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 Assert.Equal(bigTransferRequest.Amount, request.Amount);
                 Assert.Equal(bigTransferRequest.Destination, request.Destination);
                 Assert.Equal(TransferStatus.Pending, bigTransferRequest.Status);
@@ -594,7 +601,7 @@ namespace PrivatePond.Tests
                     };
                     
                     smallTransferRequestData = await
-                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                     smallTransfers.Add(smallTransferRequestData);
                 }
                 
@@ -607,15 +614,15 @@ namespace PrivatePond.Tests
                 };
                     
                 smallTransferRequestData = await
-                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 smallTransfers.Add(smallTransferRequestData);
                 request = new RequestTransferRequest()
                 {
-                    Destination = $"bitcoin:{(await RpcClient.GetNewAddressAsync())}?amount=0.0001m"
+                    Destination = $"bitcoin:{(await RpcClient.GetNewAddressAsync())}?amount=0.0001"
                 };
                     
                 smallTransferRequestData = await
-                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 smallTransfers.Add(smallTransferRequestData);
                 
                 await Eventually(async () =>
@@ -660,7 +667,7 @@ namespace PrivatePond.Tests
                 await Assert.ThrowsAsync<HttpRequestException>(async () =>
                 {
                     await
-                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 });
                 request = new RequestTransferRequest()
                 {
@@ -669,7 +676,7 @@ namespace PrivatePond.Tests
                 await Assert.ThrowsAsync<HttpRequestException>(async () =>
                 {
                     await
-                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 });
                 request = new RequestTransferRequest()
                 {
@@ -678,7 +685,7 @@ namespace PrivatePond.Tests
                 await Assert.ThrowsAsync<HttpRequestException>(async () =>
                 {
                     await
-                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request));
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 });
                 
                 //ok let's fill up the bank and see if the big request will now be processed
@@ -711,6 +718,209 @@ namespace PrivatePond.Tests
                         GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{bigTransferRequest.Id}"));
                     Assert.Equal(TransferStatus.Completed, tr.Status);
                 });
+            }
+        }
+
+
+        [Fact]
+        public async Task ReplenishmentWalletTests()
+        {
+            var seed = new Mnemonic(Wordlist.English);
+            var seedFingerprint = seed.DeriveExtKey().GetPublicKey().GetHDFingerPrint();
+            var segwitKeyPath = new RootedKeyPath(seedFingerprint, new KeyPath($"m/84'/1'/0'"));
+            var segwitp2shKeyPath = new RootedKeyPath(seedFingerprint, new KeyPath($"m/49'/1'/0'"));
+            var segwitXpriv = seed.DeriveExtKey().Derive(segwitKeyPath);
+            var segwitXpub = segwitXpriv.Neuter();
+            var segwitp2shXpriv = seed.DeriveExtKey().Derive(segwitp2shKeyPath);
+            var segwitp2shXpub = segwitp2shXpriv.Neuter();
+            
+            //let's test with a 2 of 3 segwit multsig
+            var replenishmentWalletSeed1 = new Mnemonic(Wordlist.English);
+            var replenishmentWalletSeed1KeyPath = new RootedKeyPath(replenishmentWalletSeed1.DeriveExtKey().GetPublicKey().GetHDFingerPrint(), new KeyPath($"m/48'/1'/0'/2'"));
+            var replenishmentWalletSeed2 = new Mnemonic(Wordlist.English);
+            var replenishmentWalletSeed2KeyPath = new RootedKeyPath(replenishmentWalletSeed2.DeriveExtKey().GetPublicKey().GetHDFingerPrint(), new KeyPath($"m/48'/1'/0'/2'"));
+            var replenishmentWalletSeed3 = new Mnemonic(Wordlist.English);
+            var replenishmentWalletSeed3KeyPath = new RootedKeyPath(replenishmentWalletSeed3.DeriveExtKey().GetPublicKey().GetHDFingerPrint(), new KeyPath($"m/48'/1'/0'/2'"));
+            var multsigDerivationScheme =
+                $"2-of-{replenishmentWalletSeed1.DeriveExtKey().Derive(replenishmentWalletSeed1KeyPath).Neuter().ToString(Network.RegTest)}-{replenishmentWalletSeed2.DeriveExtKey().Derive(replenishmentWalletSeed2KeyPath).Neuter().ToString(Network.RegTest)}-{replenishmentWalletSeed3.DeriveExtKey().Derive(replenishmentWalletSeed3KeyPath).Neuter().ToString(Network.RegTest)}";
+            
+
+            var options = new PrivatePondOptions()
+            {
+                NetworkType = NetworkType.Regtest,
+
+                EnablePayjoinDeposits = false,
+                MinimumConfirmations = 1,
+                KeysDir = "keys",
+                BatchTransfersEvery = 30,
+                WalletReplenishmentSource = multsigDerivationScheme,
+                WalletReplenishmentIdealBalancePercentage = 80,
+                Wallets = new WalletOption[]
+                {
+                    new WalletOption()
+                    {
+                        DerivationScheme = segwitXpub.ToString(Network.RegTest),
+                        AllowForDeposits = true,
+                        RootedKeyPaths = new[] {segwitKeyPath.ToString()},
+                        AllowForTransfers = true,
+                    },
+                    new WalletOption()
+                    {
+                        DerivationScheme = segwitp2shXpub
+                            .ToString(Network.RegTest) + "-[p2sh]",
+                        AllowForDeposits = true,
+                        RootedKeyPaths = new[] {segwitp2shKeyPath.ToString()},
+                        AllowForTransfers = true,
+                    },
+                    new WalletOption()
+                    {
+                        DerivationScheme = multsigDerivationScheme,
+                        AllowForDeposits = false,
+                        AllowForTransfers = false,
+                        RootedKeyPaths = new []
+                        {
+                            replenishmentWalletSeed1KeyPath.ToString(),
+                            replenishmentWalletSeed2KeyPath.ToString(),
+                            replenishmentWalletSeed3KeyPath.ToString(),
+                        }
+                    }
+                }
+            };
+            var app = CreateServerWithStandardSetup(options);
+            using (app.Item1)
+            {
+                //the keys dir should have been created on startup if it did not exist
+                Assert.True(Directory.Exists(options.KeysDir));
+
+                await File.WriteAllTextAsync(Path.Combine(options.KeysDir, segwitXpub.ToString(Network.RegTest)),
+                    segwitXpriv.ToString(Network.RegTest));
+                await File.WriteAllTextAsync(Path.Combine(options.KeysDir, segwitp2shXpub.ToString(Network.RegTest)),
+                    segwitp2shXpriv.ToString(Network.RegTest));
+                await Eventually(async () =>
+                {
+                    //the priv keys get deleted and an encrypted version should be created instead
+                    Assert.False(File.Exists(Path.Combine(options.KeysDir, segwitXpub.ToString(Network.RegTest))));
+                    Assert.False(File.Exists(Path.Combine(options.KeysDir, segwitp2shXpub.ToString(Network.RegTest))));
+                    Assert.True(File.Exists(Path.Combine(options.KeysDir,
+                        segwitXpub.ToString(Network.RegTest) + "encrypted")));
+                    Assert.True(File.Exists(Path.Combine(options.KeysDir,
+                        segwitp2shXpub.ToString(Network.RegTest) + "encrypted")));
+                });
+
+                var walletService = app.Item1.Services.GetService<WalletService>();
+                var transferRequestService = app.Item1.Services.GetService<TransferRequestService>();
+                var signingRequestService = app.Item1.Services.GetService<SigningRequestService>();
+                var explorerClient = app.Item1.Services.GetService<ExplorerClient>();
+                options = app.Item1.Services.GetRequiredService<IOptions<PrivatePondOptions>>().Value;
+                foreach (var walletOption in options.Wallets)
+                {
+                    if (walletOption.DerivationScheme.Contains(segwitXpub.ToString(Network.RegTest)) ||
+                        walletOption.DerivationScheme.Contains(segwitp2shXpub.ToString(Network.RegTest)))
+                    {
+
+                        Assert.True(
+                            await walletService.IsHotWallet(walletOption.WalletId));
+                    }
+                    else
+                    {
+                        Assert.False(
+                            await walletService.IsHotWallet(walletOption.WalletId));
+                    }
+                }
+
+                var resp = await app.Item2.GetAsync("api/v1/deposits/users/user1");
+                var user1DepositRequest1 = await GetJson<List<DepositRequestData>>(resp);
+                
+                foreach (var depositRequestData in user1DepositRequest1)
+                {
+                    await RpcClient.SendToAddressAsync(
+                        BitcoinAddress.Create(depositRequestData.Destination, Network.RegTest),
+                        new Money(0.004m, MoneyUnit.BTC));
+                    
+                }
+                await RpcClient.GenerateAsync(2);
+                //there should be 0.08m spendable on transfers
+                
+                //the system is hardcoded to:
+                // have a tolerance of the % specified of 2%
+                // not care if total balance is less than 0.01BTC
+
+                await transferRequestService.SkipProcessWait();
+                await transferRequestService.ProcessTask.Task;
+                Assert.Empty(await transferRequestService.GetTransferRequests(new TransferRequestQuery()
+                {
+                    TransferTypes = new[] {TransferType.Internal}
+                }));
+                await RpcClient.SendToAddressAsync(
+                    BitcoinAddress.Create(user1DepositRequest1.First().Destination, Network.RegTest),
+                    new Money(0.004m, MoneyUnit.BTC));
+                
+                await RpcClient.GenerateAsync(2);
+                //there should be 0.012btc in play now
+                //there is 0.004 in 1 and 0.008 in another
+                await transferRequestService.SkipProcessWait();
+                await transferRequestService.ProcessTask.Task;
+                uint256 transferRequestTxHash = null;
+                await Eventually(async () =>
+                {
+                    var transferRequest = Assert.Single(await transferRequestService.GetTransferRequests(
+                        new TransferRequestQuery()
+                        {
+                            TransferTypes = new[] {TransferType.Internal}
+                        }));
+                    Assert.Equal(TransferStatus.Processing, transferRequest.Status);
+                    Assert.NotNull(transferRequest.TransactionHash);
+                    transferRequestTxHash = uint256.Parse(transferRequest.TransactionHash);
+                });
+                
+                var multsigWallet =
+                    WalletService.GetWalletId(walletService.GetDerivationStrategy(multsigDerivationScheme));
+
+                var multsigWalletBalance = Assert.Single(await
+                    walletService.GetWallets(new WalletQuery()
+                    {
+                        Ids = new[] {multsigWallet}
+                    }));
+                //still unconfirmed
+                Assert.Equal(0m,multsigWalletBalance.Balance);
+                await RpcClient.GenerateAsync(1);
+                uint256 txHash = null;
+                await Eventually(async () =>
+                {
+                    multsigWalletBalance = Assert.Single(await
+                        walletService.GetWallets(new WalletQuery()
+                        {
+                            Ids = new[] {multsigWallet}
+                        }));
+                    Assert.Equal(0.0096m,multsigWalletBalance.Balance);
+                    var sr = Assert.Single(await
+                        signingRequestService.GetSigningRequests(new SigningRequestQuery()
+                        {
+                            Type = new[] {SigningRequest.SigningRequestType.HotWallet}
+                        }));
+                    Assert.True(PSBT.Parse(sr.FinalPSBT, Network.RegTest).TryGetFinalizedHash(out txHash));
+                });
+                
+                
+                //there should  0.0024 minus tx fees
+                var tx = await explorerClient.GetTransactionAsync(transferRequestTxHash);
+                Assert.Equal(txHash, tx.TransactionHash);
+                var txFee = 0.012m - tx.Transaction.TotalOut.ToDecimal(MoneyUnit.BTC);
+                var balanced = (0.012m - txFee - 0.0096m);
+                var wallets = await
+                    walletService.GetWallets(new WalletQuery());
+                Assert.Equal(3, wallets.Count());
+                Assert.Contains(wallets, data => data.Balance == balanced);
+                
+
+                var srCount = (await signingRequestService.GetSigningRequests(new SigningRequestQuery())).Count;
+                
+                await transferRequestService.SkipProcessWait();
+                await transferRequestService.ProcessTask.Task;
+                //nbothing happed, so there should not be any balancing actions
+                Assert.Equal(srCount, (await signingRequestService.GetSigningRequests(new SigningRequestQuery())).Count);
+                
+                
             }
         }
 

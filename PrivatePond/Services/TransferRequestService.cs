@@ -28,7 +28,7 @@ namespace PrivatePond.Controllers
         private readonly PayjoinClient _payjoinClient;
 
         public TaskCompletionSource ProcessTask { get; set; }
-        public TaskCompletionSource ProcessDelayWaiter { get; set; }
+        private TaskCompletionSource ProcessDelayWaiter { get; set; }
 
         public TransferRequestService(IDbContextFactory<PrivatePondDbContext> dbContextFactory,
             IOptions<PrivatePondOptions> options, ExplorerClient explorerClient, WalletService walletService,
@@ -289,7 +289,8 @@ namespace PrivatePond.Controllers
                                 PSBT = psbt.ToBase64(),
                                 FinalPSBT = signedPsbtBase64,
                                 Timestamp = timestamp,
-                                RequiredSignatures = 0
+                                RequiredSignatures = 0,
+                                Type = SigningRequest.SigningRequestType.HotWallet
                             }, token);
                             foreach (var transferRequest in transfersProcessing)
                             {
@@ -384,6 +385,7 @@ namespace PrivatePond.Controllers
                                 FinalPSBT = signedPsbtBase64,
                                 Timestamp = timestamp,
                                 RequiredSignatures = 0,
+                                Type = SigningRequest.SigningRequestType.HotWallet
                             }, token);
                             foreach (var transferRequest in transfersProcessing)
                             {
@@ -573,7 +575,8 @@ namespace PrivatePond.Controllers
                         RequiredSignatures = replenishmentWallet.GetExtPubKeys().Count() == 1
                             ? 1
                             : int.Parse(replenishmentWallet.ToString().Split("-").First()),
-                        PSBT = replenishmentpsbt.PSBT.ToBase64()
+                        PSBT = replenishmentpsbt.PSBT.ToBase64(),
+                        Type = SigningRequest.SigningRequestType.Replenishment
                     };
                     await context.AddAsync(signingRequest, token);
                     foreach (var replenishmentAmount in replenishmentAmounts)
@@ -723,6 +726,7 @@ namespace PrivatePond.Controllers
                                         PSBT = unsignedPayjoinPSBT.ToBase64(),
                                         FinalPSBT = payjoinPSBT.ToBase64(),
                                         Timestamp = DateTimeOffset.UtcNow,
+                                        Type = SigningRequest.SigningRequestType.ExpressTransferPayjoin,
                                         RequiredSignatures = 0
                                     });
                                     tr.SigningRequestId = txId;
@@ -758,7 +762,8 @@ namespace PrivatePond.Controllers
                             PSBT = psbt.ToBase64(),
                             FinalPSBT = psbt.ToBase64(),
                             Timestamp = DateTimeOffset.UtcNow,
-                            RequiredSignatures = 0
+                            RequiredSignatures = 0,
+                            Type = SigningRequest.SigningRequestType.ExpressTransfer
                         });
                         tr.Status = TransferStatus.Processing;
 

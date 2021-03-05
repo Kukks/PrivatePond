@@ -7,9 +7,11 @@ namespace PrivatePond.Controllers
         /// <summary>
         /// the status of the signing request to filter on (Pending,Signed,Expired)
         /// </summary>
-        public SigningRequest.SigningRequestStatus[] Status { get; set; } =
-        {
-            SigningRequest.SigningRequestStatus.Pending
-        };
+        public SigningRequest.SigningRequestStatus[] Status { get; set; }
+        
+        /// <summary>
+        /// the type of the signing request to filter on ( HotWallet,Replenishment,ExpressTransfer,ExpressTransferPayjoin,DepositPayjoin)
+        /// </summary>
+        public SigningRequest.SigningRequestType[] Type { get; set; } 
     }
 }

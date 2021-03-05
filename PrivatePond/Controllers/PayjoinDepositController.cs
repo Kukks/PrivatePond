@@ -1,18 +1,15 @@
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using BTCPayServer.BIP78.Receiver;
 using BTCPayServer.BIP78.Sender;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NBitcoin;
 using NBXplorer.DerivationStrategy;
 using PrivatePond.Controllers.Filters;
 using PrivatePond.Data;
-using PrivatePond.Data.EF;
 
 namespace PrivatePond.Controllers
 {

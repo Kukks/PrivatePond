@@ -57,7 +57,12 @@ namespace PrivatePond.Services.NBXplorer
                     await using var notificationSession =
                         await _explorerClient.CreateWebsocketNotificationSessionAsync(cancellationToken);
                     await notificationSession.ListenNewBlockAsync(cancellationToken);
-                    await notificationSession.ListenAllTrackedSourceAsync(false, cancellationToken);
+                    var wallets = await _walletService.GetWallets(new WalletQuery());
+
+                    await notificationSession.ListenDerivationSchemesAsync(
+                        (await Task.WhenAll(wallets.Select(data => _walletService.GetDerivationsByWalletId(data.Id)))).ToArray(),
+                        cancellationToken);
+                    // await notificationSession.ListenAllTrackedSourceAsync(false, cancellationToken);
                     await CheckForMissingTxs(_options.Value.Wallets.Select(option => option.WalletId).ToArray(),
                         cancellationToken);
                     await CheckPendingTransactions(cancellationToken);

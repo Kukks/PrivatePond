@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -72,7 +73,7 @@ namespace PrivatePond.Tests
                 {
                     {
                         "ConnectionStrings:PRIVATEPONDDATABASE",
-                        $"User ID=postgres;Host=127.0.0.1;Port=65466;Database={dbName};persistsecurityinfo=True"
+                        $"User ID=postgres;Host=127.0.0.1;Port=65466;Database={dbName};persistsecurityinfo=True;Include Error Detail=True"
                     },
                     {"NBXPLORER:EXPLORERURI", "http://localhost:65467"},
                 },
@@ -884,6 +885,19 @@ namespace PrivatePond.Tests
                 //still unconfirmed
                 Assert.Equal(0m,multsigWalletBalance.Balance);
                 await RpcClient.GenerateAsync(1);
+                await Eventually(async () =>
+                {
+                    var transferRequest = Assert.Single(await transferRequestService.GetTransferRequests(
+                        new TransferRequestQuery()
+                        {
+                            TransferTypes = new[] {TransferType.Internal}
+                        }));
+                    Assert.Equal(TransferStatus.Completed, transferRequest.Status);
+                    Assert.NotNull(transferRequest.TransactionHash);
+                    transferRequestTxHash = uint256.Parse(transferRequest.TransactionHash);
+                    
+                });
+                
                 uint256 txHash = null;
                 await Eventually(async () =>
                 {
@@ -893,34 +907,132 @@ namespace PrivatePond.Tests
                             Ids = new[] {multsigWallet}
                         }));
                     Assert.Equal(0.0096m,multsigWalletBalance.Balance);
-                    var sr = Assert.Single(await
-                        signingRequestService.GetSigningRequests(new SigningRequestQuery()
-                        {
-                            Type = new[] {SigningRequest.SigningRequestType.HotWallet}
-                        }));
+                    var sr = Assert.Single(await GetJson<List<SigningRequest>>(await app.Item2.GetAsync("api/v1/signing-requests?Type=HotWallet")));
                     Assert.True(PSBT.Parse(sr.FinalPSBT, Network.RegTest).TryGetFinalizedHash(out txHash));
+                    Assert.NotNull(txHash);
+                    
+                    //there should  0.0024 minus tx fees
+                    var tx = await explorerClient.GetTransactionAsync(transferRequestTxHash);
+                    Assert.Equal(txHash, tx.TransactionHash);
+                    var txFee = 0.012m - tx.Transaction.TotalOut.ToDecimal(MoneyUnit.BTC);
+                    var balanced = (0.012m - txFee - 0.0096m);
+                    var wallets = await
+                        walletService.GetWallets(new WalletQuery());
+                    Assert.Equal(3, wallets.Count());
+                    Assert.Contains(wallets, data => data.Balance == balanced);
                 });
-                
-                
-                //there should  0.0024 minus tx fees
-                var tx = await explorerClient.GetTransactionAsync(transferRequestTxHash);
-                Assert.Equal(txHash, tx.TransactionHash);
-                var txFee = 0.012m - tx.Transaction.TotalOut.ToDecimal(MoneyUnit.BTC);
-                var balanced = (0.012m - txFee - 0.0096m);
-                var wallets = await
-                    walletService.GetWallets(new WalletQuery());
-                Assert.Equal(3, wallets.Count());
-                Assert.Contains(wallets, data => data.Balance == balanced);
-                
 
-                var srCount = (await signingRequestService.GetSigningRequests(new SigningRequestQuery())).Count;
+                var srCount = (await GetJson<List<SigningRequest>>(await app.Item2.GetAsync("api/v1/signing-requests"))).Count;
                 
                 await transferRequestService.SkipProcessWait();
                 await transferRequestService.ProcessTask.Task;
-                //nbothing happed, so there should not be any balancing actions
-                Assert.Equal(srCount, (await signingRequestService.GetSigningRequests(new SigningRequestQuery())).Count);
+                //nothing happened, so there should not be any balancing actions
+                var x = (await GetJson<List<SigningRequest>>(await app.Item2.GetAsync("api/v1/signing-requests")));
+                Assert.Equal(srCount, x.Count);
                 
+                var bigRequest = new RequestTransferRequest()
+                {
+                    Amount = 0.008m,
+                    Destination = (await RpcClient.GetNewAddressAsync()).ToString()
+                };
+                var bigRequestData = await
+                    GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", bigRequest, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 
+                 var smallRequest = new RequestTransferRequest()
+                 {
+                     Amount = 0.0002m,
+                     Destination = (await RpcClient.GetNewAddressAsync()).ToString()
+                 };
+                 var smallRequestData = await
+                     GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", smallRequest, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+                 
+                 
+                 await transferRequestService.SkipProcessWait();
+                 await transferRequestService.ProcessTask.Task;
+                 
+                 await Eventually(async () =>
+                 {
+                     var tr = await
+                         GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{smallRequestData.Id}"));
+                     Assert.Equal(TransferStatus.Processing, tr.Status);
+                     var btr = await
+                         GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{bigRequestData.Id}"));
+                     Assert.Equal(TransferStatus.Pending, btr.Status);
+                 });
+                 
+                 //2 signing requests should have been created: 1 signed already by hot wallet fulfilling the small transfer request, and one pending to be signed by signers 
+                 List<SigningRequest> srs = null;
+                 await Eventually(async () =>
+                 {
+                     srs = await GetJson<List<SigningRequest>>(await app.Item2.GetAsync("api/v1/signing-requests"));
+                     Assert.Equal(srCount + 2, srs.Count);
+                 });
+                 var pending = srs.Single(request => request.Status is SigningRequest.SigningRequestStatus.Pending);
+                 var pendingSigningRequests =
+                     (await GetJson<List<SigningRequest>>(
+                         await app.Item2.GetAsync("api/v1/signing-requests?status=Pending")));
+                 Assert.Equal(pending.Id, Assert.Single(pendingSigningRequests).Id);
+
+                 var pendingPSBT = PSBT.Parse(pending.PSBT, Network.RegTest);
+                 var multisigDeriv = walletService.GetDerivationStrategy(multsigDerivationScheme);
+                
+                 
+                 
+                 await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                 {
+                     var res = await app.Item2.PostAsync($"api/v1/signing-requests/{pending.Id}",
+                         new StringContent("invalid psbt", Encoding.UTF8, "text/plain"));
+                     res.EnsureSuccessStatusCode();
+                 });
+                 await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                 {
+                     var res = await app.Item2.PostAsync($"api/v1/signing-requests/{srs.First(request => request.Status != SigningRequest.SigningRequestStatus.Pending).Id}",
+                         new StringContent(pendingPSBT.ToBase64(), Encoding.UTF8, "text/plain"));
+                     res.EnsureSuccessStatusCode();
+                 });
+                 await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                 {
+                     var res = await app.Item2.PostAsync($"api/v1/signing-requests/fakeId",
+                         new StringContent(pendingPSBT.ToBase64(), Encoding.UTF8, "text/plain"));
+                     res.EnsureSuccessStatusCode();
+                 });
+                 await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                 {
+                     var res = await app.Item2.PostAsync($"api/v1/signing-requests/{pending.Id}",
+                         new StringContent(pendingPSBT.ToBase64(), Encoding.UTF8, "text/plain"));
+                     res.EnsureSuccessStatusCode();
+                 });
+
+
+                 var signedBySeed1 = pendingPSBT.SignAll(multisigDeriv,
+                     replenishmentWalletSeed1.DeriveExtKey().Derive(replenishmentWalletSeed1KeyPath),
+                     replenishmentWalletSeed1KeyPath);
+                 
+                 
+                 var res = await app.Item2.PostAsync($"api/v1/signing-requests/{pending.Id}",
+                     new StringContent(signedBySeed1.ToBase64(), Encoding.UTF8, "text/plain"));
+                 res.EnsureSuccessStatusCode();
+
+                 var signedBySeed2And3 = pendingPSBT.SignAll(multisigDeriv,
+                     replenishmentWalletSeed2.DeriveExtKey().Derive(replenishmentWalletSeed2KeyPath),
+                     replenishmentWalletSeed2KeyPath).SignAll(multisigDeriv,
+                     replenishmentWalletSeed3.DeriveExtKey().Derive(replenishmentWalletSeed3KeyPath),
+                     replenishmentWalletSeed3KeyPath);
+
+                 res = await app.Item2.PostAsync($"api/v1/signing-requests/{pending.Id}",
+                     new StringContent(signedBySeed2And3.ToBase64(), Encoding.UTF8, "text/plain"));
+                 res.EnsureSuccessStatusCode();
+                 
+                 Assert.Empty(await GetJson<List<SigningRequest>>(
+                     await app.Item2.GetAsync("api/v1/signing-requests?status=Pending")));
+
+                 var signedAndReplenishmentType = Assert.Single(await GetJson<List<SigningRequest>>(
+                     await app.Item2.GetAsync("api/v1/signing-requests?status=Signed&type=Replenishment")));
+
+                 Assert.Equal(pending.Id, signedAndReplenishmentType.Id);
+                 
+                 
+
             }
         }
 

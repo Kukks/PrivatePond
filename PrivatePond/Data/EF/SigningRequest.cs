@@ -22,7 +22,8 @@ namespace PrivatePond.Data.EF
         public DateTimeOffset Timestamp { get; set; }
 
         public List<SigningRequestItem> SigningRequestItems { get; set; }
-        public TransferRequest TransferRequest { get; set; }
+        
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public SigningRequestType Type { get; set; }
 
         public enum SigningRequestStatus

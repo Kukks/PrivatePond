@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace PrivatePond.Data.EF
 {
@@ -10,9 +11,7 @@ namespace PrivatePond.Data.EF
         public string SigningRequestId { get; set; }
 
         public string SignedPSBT { get; set; }
-
-        public string SignerId { get; set; }
-
+[JsonIgnore]
         public SigningRequest SigningRequest { get; set; }
     }
 }

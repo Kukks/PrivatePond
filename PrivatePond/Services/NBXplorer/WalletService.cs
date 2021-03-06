@@ -441,6 +441,7 @@ namespace PrivatePond.Controllers
 
         public async Task Update(UpdateContext context, CancellationToken cancellationToken)
         {
+            if(context.AddedWalletTransactions.Count > 0 || context.UpdatedDepositRequests.Count > 0 || context.UpdatedWalletTransactions.Count > 0)
             _logger.LogInformation(
                 $"Adding {context.AddedWalletTransactions.Count} wallet txs, updating {context.UpdatedWalletTransactions.Count} wallet txs and {context.UpdatedDepositRequests.Count} deposit requests");
             await using var dbContext = _dbContextFactory.CreateDbContext();

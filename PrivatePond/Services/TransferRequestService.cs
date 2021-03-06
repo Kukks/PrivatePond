@@ -85,7 +85,8 @@ namespace PrivatePond.Controllers
             _logger.LogInformation($"{signingRequests.Count} signing requests have expired.");
         }
 
-        private (decimal Amount, bool Above)? HandleReplenishmentRequests(Dictionary<string, decimal> walletBalances)
+        private (decimal Amount, bool Above)? HandleReplenishmentRequests(Dictionary<string, decimal> walletBalances,
+            decimal additionalPendingTransferRequestSum = 0m)
         {
             if (string.IsNullOrEmpty(_options.Value.WalletReplenishmentSourceWalletId))
             {
@@ -100,19 +101,28 @@ namespace PrivatePond.Controllers
                 return null;
             }
 
-            var balance = walletBalances[_options.Value.WalletReplenishmentSourceWalletId];
-            var percentageOfTotal = (balance / totalSum) * 100;
-            var idealBalanceAmt = (totalSum * 0.01m) * _options.Value.WalletReplenishmentIdealBalancePercentage.Value;
+            var replenishmentWalletBalance = walletBalances[_options.Value.WalletReplenishmentSourceWalletId];
+            var percentageOfTotal = (replenishmentWalletBalance / (totalSum-additionalPendingTransferRequestSum)) * 100;
+            var idealBalanceAmt = ((totalSum -replenishmentWalletBalance) * 0.01m) * _options.Value.WalletReplenishmentIdealBalancePercentage.Value;
             if (IsWithin(percentageOfTotal, _options.Value.WalletReplenishmentIdealBalancePercentage.Value - tolerance,
                 _options.Value.WalletReplenishmentIdealBalancePercentage.Value + tolerance, out var above))
             {
                 return null;
             }
 
-            var result = (Amount: above.Value ? balance - idealBalanceAmt : idealBalanceAmt - balance,
-                Above: above.Value);
+            (decimal Amount, bool Above) result;
+            if (above is true && idealBalanceAmt <= 0)
+            {
+
+                result = (Amount: replenishmentWalletBalance, Above: true);
+            }
+            else
+            {
+                result = (Amount: above.Value ? replenishmentWalletBalance - idealBalanceAmt : idealBalanceAmt - replenishmentWalletBalance,
+                    Above: above.Value);
+            }
             _logger.LogInformation(
-                $"Ideal balance amount for replenishment wallet: {idealBalanceAmt} ({_options.Value.WalletReplenishmentIdealBalancePercentage.Value}% of {totalSum} total sum) {result.Amount} needs to be sent {(result.Above ? "from" : "to")} replenishment wallet");
+                $"Ideal balance amount for replenishment wallet: {idealBalanceAmt} ({_options.Value.WalletReplenishmentIdealBalancePercentage.Value}% of {totalSum} total sum + taking into consideration {additionalPendingTransferRequestSum} pending withdrawal request sum that could not be fulfilled from hot wallets) {result.Amount} needs to be sent {(result.Above ? "from" : "to")} replenishment wallet");
             return result;
         }
 
@@ -169,10 +179,12 @@ namespace PrivatePond.Controllers
                             hotWalletDerivationSchemes.First().Value, DerivationFeature.Change, 0, true,
                             token);
                         decimal? failedAmount = null;
+                        var leftOutTransfers = new List<TransferRequest>();
                         foreach (var transferRequest in transferRequests)
                         {
                             if (failedAmount.HasValue && transferRequest.Amount >= failedAmount)
                             {
+                                leftOutTransfers.Add(transferRequest);
                                 continue;
                             }
 
@@ -200,6 +212,8 @@ namespace PrivatePond.Controllers
                             }
                             catch (NotEnoughFundsException e)
                             {
+                                
+                                leftOutTransfers.Add(transferRequest);
                                 failedAmount = transferRequest.Amount;
                                 //keep going, we prioritize withdraws by time but if there is some other we can fit, we should
                             }
@@ -247,7 +261,7 @@ namespace PrivatePond.Controllers
 
                         workingTx = (await HandleReplenishment(token, changeAmount, changeOutputs, balancesAfter,
                             coins, changeAddress, feeRate, context, transfersProcessing,
-                            hotWalletDerivationSchemes, workingTx)) ?? workingTx;
+                            hotWalletDerivationSchemes, workingTx, leftOutTransfers.Sum(request => request.Amount))) ?? workingTx;
 
                         if (workingTx is not null)
                         {
@@ -343,7 +357,7 @@ namespace PrivatePond.Controllers
                         var transfersProcessing = new List<TransferRequest>();
                         var workingTx = (await HandleReplenishment(token, 0m, new TxOut[0], walletBalances,
                             coins, changeAddress, feeRate, context,
-                            transfersProcessing, hotWalletDerivationSchemes, null));
+                            transfersProcessing, hotWalletDerivationSchemes, null, 0m));
                         if (workingTx is not null)
                         {
                             var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
@@ -427,9 +441,9 @@ namespace PrivatePond.Controllers
             IEnumerable<Coin> coins, KeyPathInformation changeAddress, GetFeeRateResult feeRate,
             PrivatePondDbContext context, List<TransferRequest> transfersProcessing,
             Dictionary<string, DerivationStrategyBase> hotWalletDerivationSchemes,
-            Transaction workingTx)
+            Transaction workingTx, decimal additionalPendingTransferRequestSum)
         {
-            var replenishmentRequest = HandleReplenishmentRequests(walletBalances);
+            var replenishmentRequest = HandleReplenishmentRequests(walletBalances, additionalPendingTransferRequestSum);
             if (replenishmentRequest.HasValue)
             {
                 //replenishment wallet is below threshold

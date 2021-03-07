@@ -16,7 +16,7 @@ services:
       PP_NBXPLORER__EXPLORERURI: "http://nbxplorer:65467"
       PP_NBXPLORER__COOKIEFILE: ""
       PP_PRIVATEPOND__NETWORKTYPE: ${NETWORK:-regtest}
-      PP_PRIVATEPOND__KEYSDIR: "/keys"
+      PP_PRIVATEPOND__KEYSDIR: "keys"
       PP_CONNECTIONSTRINGS__PRIVATEPONDDATABASE: "User ID=postgres;Host=postgres;Port=5432;Database=privatepondregtest"
       PP_PRIVATEPOND__BatchTransfersEvery: "30"
       PP_PRIVATEPOND__PayjoinEndpointRoute: "https://173.249.44.122:5000/pj"
@@ -42,6 +42,6 @@ services:
     ports:
       - "5000:80"
     volumes:
-    - "keys_datadir:/keys"
+    - "keys_datadir:/app/keys"
 volumes:
   keys_datadir:

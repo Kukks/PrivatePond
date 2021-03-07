@@ -101,11 +101,31 @@ namespace PrivatePond.Controllers
                 _fileSystemWatcher = new FileSystemWatcher()
                 {
                     Filter = "*.*",
-                    NotifyFilter = NotifyFilters.LastWrite,
                     Path = _options.Value.KeysDir,
                     EnableRaisingEvents = true,
                     IncludeSubdirectories = false
                 };
+
+                foreach (var file in Directory.GetFiles(_options.Value.KeysDir))
+                {
+                    if (file.Contains("encrypted"))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        
+                        var k = ExtPubKey.Parse(Path.GetFileName(file), _network);
+
+                        _ = LoadKey(k);
+                    }
+                    catch (Exception e)
+                    {
+                        // ignored
+                    }
+                }
+                
                 _fileSystemWatcher.Changed += FileSystemWatcherOnChanged;
                 _fileSystemWatcher.Created += FileSystemWatcherOnChanged;
                 _fileSystemWatcher.Renamed += FileSystemWatcherOnChanged;
@@ -352,6 +372,10 @@ namespace PrivatePond.Controllers
                     try
                     {
                         var unencrypted = await File.ReadAllTextAsync(walletKeyPath);
+                        if (string.IsNullOrEmpty(unencrypted))
+                        {
+                            return null;
+                        }
                         key = ExtKey.Parse(unencrypted, network);
                         if (!key.Neuter()
                             .Equals(extPubKey))
@@ -365,6 +389,8 @@ namespace PrivatePond.Controllers
                         {
                             await File.WriteAllTextAsync(walletKeyPathEncrypted, _protector.Protect( key.GetWif(network).ToString()));
                             File.Delete(walletKeyPath);
+                            
+                            _logger.LogInformation($"Private keys encrypted to {walletKeyPathEncrypted}");
                         }
                     }
                     catch (Exception e)
@@ -375,7 +401,7 @@ namespace PrivatePond.Controllers
                     
                 }
             }
-
+            
             return key;
         }
 
@@ -393,6 +419,22 @@ namespace PrivatePond.Controllers
 
         private void FileSystemWatcherOnChanged(object sender, FileSystemEventArgs e)
         {
+            if (e.Name?.Contains("encrypted") is true)
+            {
+                
+            }
+            else
+            {
+                try
+                {
+                    var k = ExtPubKey.Parse(e.Name, _network);
+
+                    _ = LoadKey(k);
+                }
+                catch (Exception exception)
+                {
+                }
+            }
             HotWallet.Clear();
         }
 

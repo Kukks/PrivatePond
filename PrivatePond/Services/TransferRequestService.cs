@@ -27,7 +27,7 @@ namespace PrivatePond.Controllers
         private readonly ILogger<TransferRequestService> _logger;
         private readonly PayjoinClient _payjoinClient;
 
-        public TaskCompletionSource ProcessTask { get; set; }
+        public TaskCompletionSource ProcessTask { get; private set; } = new();
         private TaskCompletionSource ProcessDelayWaiter { get; set; }
 
         public TransferRequestService(IDbContextFactory<PrivatePondDbContext> dbContextFactory,
@@ -267,49 +267,31 @@ namespace PrivatePond.Controllers
                         {
                             var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
                                 .BuildPSBT(false);
-                            foreach (var hotWalletDerivationScheme in hotWalletDerivationSchemes)
-                            {
-                                var walletOption = _options.Value.Wallets.Single(option =>
-                                    option.WalletId == hotWalletDerivationScheme.Key);
-                                var res = await _explorerClient.UpdatePSBTAsync(new UpdatePSBTRequest()
-                                {
-                                    DerivationScheme = hotWalletDerivationScheme.Value,
-                                    IncludeGlobalXPub = true,
-                                    PSBT = psbt,
-                                    RebaseKeyPaths = walletOption.ParsedRootedKeyPaths.Select((s, i) =>
-                                        new PSBTRebaseKeyRules()
-                                        {
-                                            AccountKey = new BitcoinExtPubKey(
-                                                hotWalletDerivationScheme.Value.GetExtPubKeys().ElementAt(i),
-                                                _network),
-                                            AccountKeyPath = s
-                                        }).ToList()
-                                }, token);
-                                psbt = res.PSBT;
-                            }
+                           
 
                             var signedPsbt =
                                 await _walletService.SignWithHotWallets(hotWalletDerivationSchemes.Keys.ToArray(),
-                                    psbt, new SigningOptions(SigHash.All, true));
+                                    psbt, new SigningOptions(SigHash.All, true), token);
                             signedPsbt.Finalize();
                             var tx = signedPsbt.ExtractTransaction();
                             var txId = tx.GetHash().ToString();
                             var timestamp = DateTimeOffset.UtcNow;
                             var signedPsbtBase64 = signedPsbt.ToBase64();
-                            await context.SigningRequests.AddAsync(new SigningRequest()
+                            var sr = new SigningRequest()
                             {
-                                Id = txId,
+                                TransactionId = txId,
                                 Status = SigningRequest.SigningRequestStatus.Signed,
                                 PSBT = psbt.ToBase64(),
                                 FinalPSBT = signedPsbtBase64,
                                 Timestamp = timestamp,
                                 RequiredSignatures = 0,
                                 Type = SigningRequest.SigningRequestType.HotWallet
-                            }, token);
+                            };
+                            await context.SigningRequests.AddAsync(sr, token);
                             foreach (var transferRequest in transfersProcessing)
                             {
                                 transferRequest.Status = TransferStatus.Processing;
-                                transferRequest.SigningRequestId = txId;
+                                transferRequest.SigningRequestId = sr.Id;
                             }
 
                             var result = await _explorerClient.BroadcastAsync(tx, token);
@@ -362,49 +344,31 @@ namespace PrivatePond.Controllers
                         {
                             var psbt = _network.CreateTransactionBuilder().AddCoins(coins).ContinueToBuild(workingTx)
                                 .BuildPSBT(false);
-                            foreach (var hotWalletDerivationScheme in hotWalletDerivationSchemes)
-                            {
-                                var walletOption = _options.Value.Wallets.Single(option =>
-                                    option.WalletId == hotWalletDerivationScheme.Key);
-                                var res = await _explorerClient.UpdatePSBTAsync(new UpdatePSBTRequest()
-                                {
-                                    DerivationScheme = hotWalletDerivationScheme.Value,
-                                    IncludeGlobalXPub = true,
-                                    PSBT = psbt,
-                                    RebaseKeyPaths = walletOption.ParsedRootedKeyPaths.Select((s, i) =>
-                                        new PSBTRebaseKeyRules()
-                                        {
-                                            AccountKey = new BitcoinExtPubKey(
-                                                hotWalletDerivationScheme.Value.GetExtPubKeys().ElementAt(i),
-                                                _network),
-                                            AccountKeyPath = s
-                                        }).ToList()
-                                }, token);
-                                psbt = res.PSBT;
-                            }
+                           
 
                             var signedPsbt =
                                 await _walletService.SignWithHotWallets(hotWalletDerivationSchemes.Keys.ToArray(),
-                                    psbt, new SigningOptions(SigHash.All, true));
+                                    psbt, new SigningOptions(SigHash.All, true), token);
                             signedPsbt.Finalize();
                             var tx = signedPsbt.ExtractTransaction();
                             var txId = tx.GetHash().ToString();
                             var timestamp = DateTimeOffset.UtcNow;
                             var signedPsbtBase64 = signedPsbt.ToBase64();
-                            await context.SigningRequests.AddAsync(new SigningRequest()
+                            var sr = new SigningRequest()
                             {
-                                Id = txId,
+                                TransactionId = txId,
                                 Status = SigningRequest.SigningRequestStatus.Signed,
                                 PSBT = psbt.ToBase64(),
                                 FinalPSBT = signedPsbtBase64,
                                 Timestamp = timestamp,
                                 RequiredSignatures = 0,
                                 Type = SigningRequest.SigningRequestType.HotWallet
-                            }, token);
+                            };
+                            await context.SigningRequests.AddAsync(sr, token);
                             foreach (var transferRequest in transfersProcessing)
                             {
                                 transferRequest.Status = TransferStatus.Processing;
-                                transferRequest.SigningRequestId = txId;
+                                transferRequest.SigningRequestId = sr.Id;
                             }
 
                             var result = await _explorerClient.BroadcastAsync(tx, token);
@@ -581,7 +545,7 @@ namespace PrivatePond.Controllers
                     replenishmentpsbt.PSBT.TryGetFinalizedHash(out var txid);
                     var signingRequest = new SigningRequest()
                     {
-                        Id = txid.ToString(),
+                        TransactionId = txid.ToString(),
                         Status = SigningRequest.SigningRequestStatus.Pending,
                         Timestamp = DateTimeOffset.UtcNow,
                         WalletId = _options.Value
@@ -634,7 +598,7 @@ namespace PrivatePond.Controllers
         private async Task<List<TransferRequest>> GetTransferRequests(PrivatePondDbContext context,
             TransferRequestQuery query)
         {
-            var queryable = context.TransferRequests.AsQueryable();
+            var queryable = context.TransferRequests.Include(request => request.SigningRequest).AsQueryable();
 
             if (query.Ids is not null)
             {
@@ -701,7 +665,7 @@ namespace PrivatePond.Controllers
                         
                         txBuilder = txBuilder.SendEstimatedFees(feeRate.FeeRate);
                         var psbt = txBuilder.BuildPSBT(false);
-                        psbt = await _walletService.SignWithHotWallets(wallets.Keys.ToArray(), psbt, new SigningOptions(SigHash.All, true));
+                        psbt = await _walletService.SignWithHotWallets(wallets.Keys.ToArray(), psbt, new SigningOptions(SigHash.All, true), CancellationToken.None);
 
                         Transaction tx;
                         string txId = null;
@@ -715,7 +679,7 @@ namespace PrivatePond.Controllers
                                     psbt, CancellationToken.None);
                                 var payjoinPSBT =
                                     await _walletService.SignWithHotWallets(wallets.Keys.ToArray(),
-                                        unsignedPayjoinPSBT, new SigningOptions(SigHash.All, true));
+                                        unsignedPayjoinPSBT, new SigningOptions(SigHash.All, true), CancellationToken.None);
                                 payjoinPSBT.Finalize();
                                 var payjoinTx = payjoinPSBT.ExtractTransaction();
                                 var payjoinBroadcastResult = await _explorerClient.BroadcastAsync(payjoinTx);
@@ -724,26 +688,27 @@ namespace PrivatePond.Controllers
                                     psbt.Finalize();
                                     tx = psbt.ExtractTransaction();
                                     txId = tx.GetHash().ToString();
-                                    
-                                    await context.ScheduledTransactions.AddAsync(new ScheduledTransaction()
+                                    var payjoinSigningRequest = new SigningRequest()
                                     {
-                                        Id = txId,
-                                        Transaction = tx.ToHex(),
-                                        BroadcastAt = DateTimeOffset.UtcNow.AddMinutes(1),
-                                        ReplacesSigningRequestId = txId,
-                                    });
-
-                                    await context.SigningRequests.AddAsync(new SigningRequest()
-                                    {
-                                        Id = payjoinTx.GetHash().ToString(),
+                                        TransactionId = payjoinTx.GetHash().ToString(),
                                         Status = SigningRequest.SigningRequestStatus.Signed,
                                         PSBT = unsignedPayjoinPSBT.ToBase64(),
                                         FinalPSBT = payjoinPSBT.ToBase64(),
                                         Timestamp = DateTimeOffset.UtcNow,
                                         Type = SigningRequest.SigningRequestType.ExpressTransferPayjoin,
                                         RequiredSignatures = 0
+                                    };
+                                    
+                                    await context.SigningRequests.AddAsync(payjoinSigningRequest);
+                                    await context.ScheduledTransactions.AddAsync(new ScheduledTransaction()
+                                    {
+                                        Id = txId,
+                                        Transaction = tx.ToHex(),
+                                        BroadcastAt = DateTimeOffset.UtcNow.AddMinutes(1),
+                                        ReplacesSigningRequestId = payjoinSigningRequest.Id,
                                     });
-                                    tr.SigningRequestId = txId;
+
+                                    tr.SigningRequestId =  payjoinSigningRequest.Id;
                                 }
                             }
                             catch (Exception e)
@@ -757,9 +722,6 @@ namespace PrivatePond.Controllers
                             psbt.Finalize();
                             tx = psbt.ExtractTransaction();
                             txId = tx.GetHash().ToString();
-
-                            tr.SigningRequestId = txId;
-
                             var result = await _explorerClient.BroadcastAsync(tx);
                             if (!result.Success)
                             {
@@ -769,18 +731,22 @@ namespace PrivatePond.Controllers
                             }
                         }
 
-                        await context.SigningRequests.AddAsync(new SigningRequest()
+                        var sr = new SigningRequest()
                         {
-                            Id = txId,
+                            TransactionId = txId,
                             Status = SigningRequest.SigningRequestStatus.Signed,
                             PSBT = psbt.ToBase64(),
                             FinalPSBT = psbt.ToBase64(),
                             Timestamp = DateTimeOffset.UtcNow,
                             RequiredSignatures = 0,
                             Type = SigningRequest.SigningRequestType.ExpressTransfer
-                        });
+                        };
+                        await context.SigningRequests.AddAsync(sr);
                         tr.Status = TransferStatus.Processing;
-
+                        if (string.IsNullOrEmpty(tr.SigningRequestId))
+                        {
+                            tr.SigningRequestId = sr.Id;
+                        }
                         _logger.LogInformation(
                             $"Automated express transfer broadcasted tx {tr.SigningRequestId}");
                         await context.SaveChangesAsync();
@@ -807,7 +773,8 @@ namespace PrivatePond.Controllers
                 Destination = request.Destination,
                 Status = request.Status,
                 Timestamp = request.Timestamp.ToUniversalTime(),
-                TransactionHash = request.SigningRequestId
+                TransactionHash = request.SigningRequest?.TransactionId,
+                Type = request.TransferType
             };
         }
 

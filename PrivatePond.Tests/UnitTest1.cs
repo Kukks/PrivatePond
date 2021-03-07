@@ -462,7 +462,7 @@ namespace PrivatePond.Tests
                         {
                             Type = new[] {SigningRequest.SigningRequestType.DepositPayjoin}
                         }));
-                    Assert.Equal(history.TransactionId,sr.Id);
+                    Assert.Equal(history.TransactionId,sr.TransactionId);
                 });
                 
                 
@@ -501,7 +501,6 @@ namespace PrivatePond.Tests
             var options = new PrivatePondOptions()
             {
                 NetworkType = NetworkType.Regtest,
-
                 EnablePayjoinDeposits = false,
                 MinimumConfirmations = 1,
                 KeysDir = "keys",
@@ -633,6 +632,8 @@ namespace PrivatePond.Tests
                         var tr = await
                             GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{smallTransfer.Id}"));
                         Assert.Equal(TransferStatus.Processing, tr.Status);
+                        
+                        Assert.Equal(TransferType.External,tr.Type);
                         Assert.False(string.IsNullOrEmpty(tr.TransactionHash));
                         var tx = await explorerClient.GetTransactionAsync(uint256.Parse(tr.TransactionHash));
                         Assert.Equal(0, tx.Confirmations );
@@ -719,6 +720,25 @@ namespace PrivatePond.Tests
                         GetJson<TransferRequestData>(await app.Item2.GetAsync($"api/v1/transfers/{bigTransferRequest.Id}"));
                     Assert.Equal(TransferStatus.Completed, tr.Status);
                 });
+                
+                //let's try out express transfers --- these are instant ones where we do not wait for batching and is dedicated for this one tx.
+                var expressTransfer = await
+                        GetJson<TransferRequestData>(await app.Item2.PostAsJsonAsync("api/v1/transfers", new RequestTransferRequest()
+                        {
+                            Amount = 0.001m,
+                            Destination = (await RpcClient.GetNewAddressAsync()).ToString(),
+                            Express = true
+                        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+                Assert.NotNull(expressTransfer);
+                Assert.Equal(TransferStatus.Processing,expressTransfer.Status);
+                Assert.Equal(TransferType.ExternalExpress,expressTransfer.Type);
+                var expressTx =
+                    await explorerClient.GetTransactionAsync(uint256.Parse(expressTransfer.TransactionHash));
+                Assert.True(expressTx.Transaction.Outputs.Exists(txout =>
+                    txout.IsTo(BitcoinAddress.Create(expressTransfer.Destination, Network.RegTest)) &&
+                    txout.Value.ToDecimal(MoneyUnit.BTC) == expressTransfer.Amount));
+                
             }
         }
 
@@ -847,7 +867,6 @@ namespace PrivatePond.Tests
                 // not care if total balance is less than 0.01BTC
 
                 await transferRequestService.SkipProcessWait();
-                await transferRequestService.ProcessTask.Task;
                 Assert.Empty(await transferRequestService.GetTransferRequests(new TransferRequestQuery()
                 {
                     TransferTypes = new[] {TransferType.Internal}
@@ -860,7 +879,6 @@ namespace PrivatePond.Tests
                 //there should be 0.012btc in play now
                 //there is 0.004 in 1 and 0.008 in another
                 await transferRequestService.SkipProcessWait();
-                await transferRequestService.ProcessTask.Task;
                 uint256 transferRequestTxHash = null;
                 await Eventually(async () =>
                 {
@@ -882,8 +900,6 @@ namespace PrivatePond.Tests
                     {
                         Ids = new[] {multsigWallet}
                     }));
-                //still unconfirmed
-                Assert.Equal(0m,multsigWalletBalance.Balance);
                 await RpcClient.GenerateAsync(1);
                 await Eventually(async () =>
                 {
@@ -925,7 +941,6 @@ namespace PrivatePond.Tests
                 var srCount = (await GetJson<List<SigningRequest>>(await app.Item2.GetAsync("api/v1/signing-requests"))).Count;
                 
                 await transferRequestService.SkipProcessWait();
-                await transferRequestService.ProcessTask.Task;
                 //nothing happened, so there should not be any balancing actions
                 var x = (await GetJson<List<SigningRequest>>(await app.Item2.GetAsync("api/v1/signing-requests")));
                 Assert.Equal(srCount, x.Count);
@@ -948,7 +963,6 @@ namespace PrivatePond.Tests
                  
                  
                  await transferRequestService.SkipProcessWait();
-                 await transferRequestService.ProcessTask.Task;
                  
                  await Eventually(async () =>
                  {
@@ -980,7 +994,7 @@ namespace PrivatePond.Tests
                  
                  await Assert.ThrowsAsync<HttpRequestException>(async () =>
                  {
-                     var res = await app.Item2.PostAsync($"api/v1/signing-requests/{pending.Id}",
+                     var res = await app.Item2.PostAsync($"api/v1/signing-requests/{pending.TransactionId}",
                          new StringContent("invalid psbt", Encoding.UTF8, "text/plain"));
                      res.EnsureSuccessStatusCode();
                  });
@@ -1029,7 +1043,7 @@ namespace PrivatePond.Tests
                  var signedAndReplenishmentType = Assert.Single(await GetJson<List<SigningRequest>>(
                      await app.Item2.GetAsync("api/v1/signing-requests?status=Signed&type=Replenishment")));
 
-                 Assert.Equal(pending.Id, signedAndReplenishmentType.Id);
+                 Assert.Equal(pending.TransactionId, signedAndReplenishmentType.TransactionId);
                  
                  
 

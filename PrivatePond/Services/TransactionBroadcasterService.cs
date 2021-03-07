@@ -67,14 +67,34 @@ namespace PrivatePond.Controllers
                        if ((await _explorerClient.BroadcastAsync(tx, token))
                            .Success && !string.IsNullOrEmpty(scheduledTransaction.ReplacesSigningRequestId))
                        {
-                           _logger.LogInformation($"Planned tx {tx.GetHash()} broadcasted. {(string.IsNullOrEmpty(scheduledTransaction.ReplacesSigningRequestId)? "": $"Replacing tx {scheduledTransaction.ReplacesSigningRequestId}")}");
+                           var replacementSigningRequestId = (await context.SigningRequests.SingleOrDefaultAsync(
+                               request => request.TransactionId == tx.GetHash().ToString(), token))?.Id;
+
+                           if (replacementSigningRequestId is null)
+                           {
+                               
+                               var newSigningRequest = new SigningRequest()
+                               {
+                                   Status = SigningRequest.SigningRequestStatus.Signed,
+                                   Timestamp = DateTimeOffset.UtcNow,
+                                   RequiredSignatures = 0,
+                                   TransactionId = tx.GetHash().ToString(),
+                                   PSBT = tx.CreatePSBT(_network).ToBase64(),
+                                   FinalPSBT = tx.CreatePSBT(_network).ToBase64(),
+                                   Type = SigningRequest.SigningRequestType.PayjoinFallback
+                               };
+                               await context.AddAsync(newSigningRequest, token);
+                               replacementSigningRequestId = newSigningRequest.Id;
+                           }
+                           
+                           _logger.LogInformation($"Planned tx {tx.GetHash()} broadcasted. {(string.IsNullOrEmpty(scheduledTransaction.ReplacesSigningRequestId)? "": $"Replacing signing request {scheduledTransaction.ReplacesSigningRequestId}")} with {replacementSigningRequestId}");
                            var trs = await context.TransferRequests
                                .Where(request =>
                                    request.SigningRequestId == scheduledTransaction.ReplacesSigningRequestId)
                                .ToListAsync(token);
                           trs.ForEach(request =>
                           {
-                              request.SigningRequestId = tx.GetHash().ToString();
+                              request.SigningRequestId = replacementSigningRequestId;
                               request.Status = TransferStatus.Processing;
                           });
                        };

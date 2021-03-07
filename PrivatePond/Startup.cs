@@ -2,15 +2,18 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using BTCPayServer.BIP78.Sender;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Net.Http.Headers;
 using Microsoft.OpenApi.Models;
 using NBitcoin;
 using NBXplorer.DerivationStrategy;
@@ -98,8 +101,10 @@ namespace PrivatePond
                 builder.UseNpgsql(connString, optionsBuilder => { optionsBuilder.EnableRetryOnFailure(10); });
             }, ServiceLifetime.Singleton);
             services.AddSingleton<IStartupTask, MigrationStartupTask>();
-            services.AddControllers().AddJsonOptions(options => 
-                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));;
+            services.AddControllers().AddJsonOptions(options =>
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter())).AddMvcOptions(options =>
+                options.InputFormatters.Insert(0, new RawRequestBodyFormatter()));
+            
             services.AddSwaggerGen(c =>
             {
                 var filePath = Path.Combine(System.AppContext.BaseDirectory, "PrivatePond.xml");
@@ -133,4 +138,73 @@ namespace PrivatePond
             Source = code;
         }
     }
+    
+    /// <summary>
+/// Formatter that allows content of type text/plain and application/octet stream
+/// or no content type to be parsed to raw data. Allows for a single input parameter
+/// in the form of:
+/// 
+/// public string RawString([FromBody] string data)
+/// public byte[] RawData([FromBody] byte[] data)
+/// </summary>
+public class RawRequestBodyFormatter : InputFormatter
+{
+    public RawRequestBodyFormatter()
+    {
+        SupportedMediaTypes.Add(new MediaTypeHeaderValue("text/plain"));
+        SupportedMediaTypes.Add(new MediaTypeHeaderValue("application/octet-stream"));
+    }
+
+
+    /// <summary>
+    /// Allow text/plain, application/octet-stream and no content type to
+    /// be processed
+    /// </summary>
+    /// <param name="context"></param>
+    /// <returns></returns>
+    public override Boolean CanRead(InputFormatterContext context)
+    {
+        if (context == null) throw new ArgumentNullException(nameof(context));
+
+        var contentType = context.HttpContext.Request.ContentType;
+        if (string.IsNullOrEmpty(contentType) || contentType == "text/plain" ||
+            contentType == "application/octet-stream")
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Handle text/plain or no content type for string results
+    /// Handle application/octet-stream for byte[] results
+    /// </summary>
+    /// <param name="context"></param>
+    /// <returns></returns>
+    public override async Task<InputFormatterResult> ReadRequestBodyAsync(InputFormatterContext context)
+    {
+        var request = context.HttpContext.Request;
+        var contentType = context.HttpContext.Request.ContentType;
+
+
+        if (string.IsNullOrEmpty(contentType) || contentType == "text/plain")
+        {
+            using (var reader = new StreamReader(request.Body))
+            {
+                var content = await reader.ReadToEndAsync();
+                return await InputFormatterResult.SuccessAsync(content);
+            }
+        }
+        if (contentType == "application/octet-stream")
+        {
+            using (var ms = new MemoryStream(2048))
+            {
+                await request.Body.CopyToAsync(ms);
+                var content = ms.ToArray();
+                return await InputFormatterResult.SuccessAsync(content);
+            }
+        }
+
+        return await InputFormatterResult.FailureAsync();
+    }
+}
 }

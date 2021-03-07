@@ -30,5 +30,10 @@ namespace PrivatePond.Controllers
         /// The transaction id if the transfer has been processed
         /// </summary>
         public string TransactionHash { get; set; }
+/// <summary>
+/// the type of transfer ( External,Internal,ExternalExpress)
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+        public TransferType Type { get; set; }
     }
 }

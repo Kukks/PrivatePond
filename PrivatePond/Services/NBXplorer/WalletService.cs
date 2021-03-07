@@ -30,6 +30,7 @@ namespace PrivatePond.Controllers
         private readonly DerivationStrategyFactory _derivationStrategyFactory;
         private readonly ILogger<WalletService> _logger;
         private readonly NBXplorerSummaryProvider _nbXplorerSummaryProvider;
+        private readonly Network _network;
         private FileSystemWatcher _fileSystemWatcher;
         private IDataProtector _protector;
         private Dictionary<string, bool> HotWallet = new();
@@ -46,7 +47,7 @@ namespace PrivatePond.Controllers
             ExplorerClient explorerClient,
             IDataProtectionProvider dataProtectionProvider,
             DerivationStrategyFactory derivationStrategyFactory,
-            ILogger<WalletService> logger, NBXplorerSummaryProvider nbXplorerSummaryProvider)
+            ILogger<WalletService> logger, NBXplorerSummaryProvider nbXplorerSummaryProvider, Network network)
         {
             _options = options;
             _dbContextFactory = dbContextFactory;
@@ -54,6 +55,7 @@ namespace PrivatePond.Controllers
             _derivationStrategyFactory = derivationStrategyFactory;
             _logger = logger;
             _nbXplorerSummaryProvider = nbXplorerSummaryProvider;
+            _network = network;
             _protector = dataProtectionProvider.CreateProtector("wallet");
         }
 
@@ -480,21 +482,45 @@ namespace PrivatePond.Controllers
         private async Task<WalletData> FromDBModel(Wallet wallet)
         {
             var derivation = await GetDerivationsByWalletId(wallet.Id);
+            var utxos = await _explorerClient.GetUTXOsAsync(derivation);
+            
             var balance = await _explorerClient.GetBalanceAsync(derivation);
             return new WalletData()
             {
-                Balance = ((Money) balance.Confirmed).ToDecimal(MoneyUnit.BTC),
+                Balance = ((Money) balance.Total).ToDecimal(MoneyUnit.BTC),
                 Enabled = wallet.Enabled,
                 Id = wallet.Id,
                 
             };
         }
 
-        public async Task<PSBT> SignWithHotWallets(string[] walletIdsToSignWith, PSBT psbt, SigningOptions signingOptions)
+        public async Task<PSBT> SignWithHotWallets(string[] walletIdsToSignWith, PSBT psbt, SigningOptions signingOptions, CancellationToken cancellationToken)
         {
             var resultingPSBT = psbt.Clone();
             
             var derivationsByWalletId = walletIdsToSignWith.ToDictionary(s => s, GetDerivationsByWalletId);
+            foreach (var walletId in walletIdsToSignWith)
+            {
+                var hotWalletDerivationScheme = await derivationsByWalletId[walletId];
+                var walletOption = _options.Value.Wallets.Single(option =>
+                    option.WalletId == walletId);
+                var res = await _explorerClient.UpdatePSBTAsync(new UpdatePSBTRequest()
+                {
+                    DerivationScheme = hotWalletDerivationScheme,
+                    IncludeGlobalXPub = true,
+                    PSBT = resultingPSBT,
+                    RebaseKeyPaths = walletOption.ParsedRootedKeyPaths.Select((s, i) =>
+                        new PSBTRebaseKeyRules()
+                        {
+                            AccountKey = new BitcoinExtPubKey(
+                                hotWalletDerivationScheme.GetExtPubKeys().ElementAt(i),
+                                _network),
+                            AccountKeyPath = s
+                        }).ToList()
+                }, cancellationToken);
+                resultingPSBT = res.PSBT;
+            }
+            
             await Task.WhenAll(derivationsByWalletId.Values);
             foreach (var task in derivationsByWalletId)
             {

@@ -238,7 +238,7 @@ namespace PrivatePond.Controllers
                 {
                     EnforceLowR = enforcedLowR,
                     SigHash = SigHash.All
-                });
+                }, CancellationToken.None);
                 var ourCoins = new List<Coin>();
                 foreach (var coin in selectedUTXOs.Select(o => o.Value))
                 {
@@ -306,7 +306,7 @@ namespace PrivatePond.Controllers
                 PSBT = context.OriginalPSBT.ToBase64(),
                 FinalPSBT = context.PayjoinReceiverWalletProposal.PayjoinPSBT.ToBase64(),
                 Type = SigningRequest.SigningRequestType.DepositPayjoin,
-                Id = context.PayjoinReceiverWalletProposal.PayjoinTransactionHash.ToString()
+                TransactionId = context.PayjoinReceiverWalletProposal.PayjoinTransactionHash.ToString()
             });
             await dbcontext.SaveChangesAsync();
         }

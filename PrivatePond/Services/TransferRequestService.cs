@@ -618,6 +618,17 @@ namespace PrivatePond.Controllers
                     query.TransferTypes.Contains(transaction.TransferType));
             }
 
+            if (query.MaxAmount is not null)
+            {
+                queryable = queryable.Where(transaction =>
+                    transaction.Amount <= query.MaxAmount);
+            }
+
+            if (query.Take.HasValue)
+            {
+                queryable = queryable.Take(query.Take.Value);
+            }
+
             return await queryable.ToListAsync();
         }
 

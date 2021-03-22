@@ -10,5 +10,7 @@ namespace PrivatePond.Controllers
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public TransferType[] TransferTypes { get; set; }
         public string[] Ids { get; set; }
+        public decimal? MaxAmount { get; set; }
+        public int? Take { get; set; }
     }
 }

@@ -289,14 +289,15 @@ namespace PrivatePond.Controllers
             
             await using var dbcontext = _dbContextFactory.CreateDbContext();
             context.OriginalPSBT.TryGetFinalizedHash(out var originalPsbtHash);
-            await dbcontext.PayjoinRecords.AddAsync(new PayjoinRecord()
+            context.PayjoinRecord = new PayjoinRecord()
             {
                 Id = context.PayjoinReceiverWalletProposal.PayjoinTransactionHash.ToString(),
                 DepositContributedAmount =
                     context.PayjoinReceiverWalletProposal.ModifiedPaymentRequest.Value?.ToDecimal(MoneyUnit.BTC),
                 OriginalTransactionId = originalPsbtHash.ToString(),
                 DepositRequestId = context.DepositRequest.Id
-            });
+            };
+            await dbcontext.PayjoinRecords.AddAsync(context.PayjoinRecord);
 
             await dbcontext.SigningRequests.AddAsync(new SigningRequest()
             {

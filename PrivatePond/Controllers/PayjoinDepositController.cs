@@ -10,22 +10,23 @@ using NBitcoin;
 using NBXplorer.DerivationStrategy;
 using PrivatePond.Controllers.Filters;
 using PrivatePond.Data;
+using PrivatePond.Services;
 
 namespace PrivatePond.Controllers
 {
     public class PayjoinDepositController : Controller
     {
         private readonly IOptions<PrivatePondOptions> _options;
-        private readonly PayjoinReceiverWallet _payjoinReceiverWaller;
+        private readonly PayjoinReceiverWallet _payjoinReceiverWallet;
         private readonly Network _network;
 
         public PayjoinDepositController(
             IOptions<PrivatePondOptions> options,
-            PayjoinReceiverWallet payjoinReceiverWaller,
+            PayjoinReceiverWallet payjoinReceiverWallet,
             Network network)
         {
             _options = options;
-            _payjoinReceiverWaller = payjoinReceiverWaller;
+            _payjoinReceiverWallet = payjoinReceiverWallet;
             _network = network;
         }
 
@@ -66,7 +67,7 @@ namespace PrivatePond.Controllers
             });
             try
             {
-                await _payjoinReceiverWaller.Initiate(ctx);
+                await _payjoinReceiverWallet.Initiate(ctx);
 
                 return Ok(ctx.PayjoinReceiverWalletProposal.PayjoinPSBT.ToBase64());
             }
@@ -91,6 +92,7 @@ namespace PrivatePond.Controllers
         public Dictionary<string, Coin[]> WalletUTXOS;
         public Dictionary<string, DerivationStrategyBase> HotWallets { get; set; }
         public DepositRequest? DepositRequest { get; set; }
+        public PayjoinRecord PayjoinRecord { get; set; }
 
         public PrivatePondPayjoinProposalContext(PSBT originalPSBT,
             PayjoinClientParameters payjoinClientParameters = null) : base(originalPSBT, payjoinClientParameters)

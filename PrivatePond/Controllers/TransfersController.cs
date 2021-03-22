@@ -45,7 +45,7 @@ namespace PrivatePond.Controllers
         [HttpPost("")]
         public async Task<ActionResult<TransferRequestData>> RequestTransfer(RequestTransferRequest request)
         {
-             if (!string.IsNullOrEmpty(request.Destination))
+            if (!string.IsNullOrEmpty(request.Destination))
             {
                 try
                 {
@@ -53,7 +53,8 @@ namespace PrivatePond.Controllers
                         HelperExtensions.GetAddress(request.Destination, _network, out var scriptPubKeyType,
                             out var bip21Amount, out _);
 
-                    if (bip21Amount.HasValue && request.Amount.HasValue && request.Amount != bip21Amount.Value && bip21Amount.Value != 0)
+                    if (bip21Amount.HasValue && request.Amount.HasValue && request.Amount != bip21Amount.Value &&
+                        bip21Amount.Value != 0)
                     {
                         ModelState.AddModelError((RequestTransferRequest x) => x.Amount,
                             "An amount was specified for this transfer but the destination is a payment link with a different amount");

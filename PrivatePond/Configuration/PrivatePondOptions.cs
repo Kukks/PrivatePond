@@ -28,7 +28,7 @@ namespace PrivatePond.Data
         public bool EnableExternalExpressTransfers { get; set; } = true;
         public bool EnablePayjoinTransfers { get; set; } = true;
         public bool EnablePayjoinDeposits { get; set; } = true;
-        public bool BatchTransfersInPayjoin { get; set; } = true;
+        public bool BatchTransfersInPayjoin { get; set; } = false;
     }
 
     public class WalletOption

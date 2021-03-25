@@ -112,7 +112,7 @@ namespace PrivatePond.Controllers
             HashSet<TxOut> isOurOutput = new HashSet<TxOut>();
             isOurOutput.Add(originalPaymentOutput);
 
-            List<TxOut> newOutputs = null;
+            List<TxOut> newOutputs = new List<TxOut>();
             
             Money contributedAmount = Money.Zero;
             var canBatch = _options.Value.BatchTransfersInPayjoin &&
@@ -340,6 +340,7 @@ namespace PrivatePond.Controllers
                 {
                     newPsbtOutput.HDKeyPaths.Clear();
                 }
+                newPsbt.GlobalXPubs.Clear();
                 
                 context.PayjoinReceiverWalletProposal = new PayjoinReceiverWalletProposal()
                 {

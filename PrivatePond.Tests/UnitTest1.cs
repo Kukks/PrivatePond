@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -13,26 +12,21 @@ using System.Threading.Tasks;
 using BTCPayServer.BIP78.Sender;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NBitcoin;
-using NBitcoin.Altcoins.Elements;
-using NBitcoin.OpenAsset;
 using NBitcoin.Payment;
 using NBitcoin.RPC;
 using NBXplorer;
 using NBXplorer.DerivationStrategy;
 using NBXplorer.Models;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using PrivatePond.Controllers;
 using PrivatePond.Data;
 using PrivatePond.Data.EF;
 using PrivatePond.Services.NBXplorer;
 using Xunit;
-using Xunit.Sdk;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace PrivatePond.Tests
@@ -437,12 +431,22 @@ namespace PrivatePond.Tests
                        Assert.False(
                            await walletService.IsHotWallet(walletOption.WalletId));
                    }
-               }    
-               
-               var payjoinPSBT = await pjClient.RequestPayjoin(bip21,
-                    new NBXplorerPayjoinWallet(wallet.DerivationScheme, new[] {wallet.AccountKeyPath}), originalPSBT, CancellationToken.None);
-                payjoinPSBT = payjoinPSBT.SignAll(wallet.DerivationScheme, wallet.AccountHDKey, wallet.AccountKeyPath).Finalize();
-                Assert.True((await explorerClient.BroadcastAsync(payjoinPSBT.ExtractTransaction())).Success);
+               }
+
+               PSBT payjoinPSBT;
+               try
+               {
+
+                   payjoinPSBT = await pjClient.RequestPayjoin(bip21,
+                       new NBXplorerPayjoinWallet(wallet.DerivationScheme, new[] {wallet.AccountKeyPath}), originalPSBT, CancellationToken.None);
+                   payjoinPSBT = payjoinPSBT.SignAll(wallet.DerivationScheme, wallet.AccountHDKey, wallet.AccountKeyPath).Finalize();
+                   Assert.True((await explorerClient.BroadcastAsync(payjoinPSBT.ExtractTransaction())).Success);
+               }
+               catch (Exception e)
+               {
+                   Console.WriteLine(e);
+                   throw;
+               }
 
                 await Eventually(async () =>
                 {

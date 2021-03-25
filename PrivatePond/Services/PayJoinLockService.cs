@@ -92,8 +92,9 @@ namespace PrivatePond.Controllers
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     await using var context = _dbContextFactory.CreateDbContext();
+                    var t = DateTimeOffset.UtcNow.AddMinutes(-4);
                     var expiredLocks = await  context.PayjoinLocks.Where(pjLock =>
-                        pjLock.Timestamp < DateTimeOffset.UtcNow.AddMinutes(-4) && !pjLock.Id.StartsWith("K-")).ToListAsync(cancellationToken);
+                        pjLock.Timestamp < t && !pjLock.Id.StartsWith("K-")).ToListAsync(cancellationToken);
                     context.PayjoinLocks.RemoveRange(expiredLocks);
                     await context.SaveChangesAsync(cancellationToken);
                     await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);

@@ -56,8 +56,9 @@ namespace PrivatePond.Controllers
             {
                 await _explorerClient.WaitServerStartedAsync(token);
                 await using var context = _dbContextFactory.CreateDbContext();
+                var t = DateTimeOffset.Now;
                 var txs = await context.ScheduledTransactions
-                    .Where(transaction => transaction.BroadcastAt.ToUniversalTime() <= DateTimeOffset.UtcNow)
+                    .Where(transaction => transaction.BroadcastAt <= t)
                     .ToListAsync(token);
                foreach (var scheduledTransaction in txs)
                {

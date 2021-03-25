@@ -91,19 +91,105 @@ namespace PrivatePond.Controllers
             Money due = context.PaymentRequest.Amount;
             Dictionary<OutPoint, Coin> selectedUTXOs = new Dictionary<OutPoint, Coin>();
             var utxos = context.WalletUTXOS.SelectMany(pair => pair.Value).ToArray();
-            // In case we are paying ourselves, be need to make sure
+            // In case we are paying ourselves, we need to make sure
             // we can't take spent outpoints.
             var prevOuts = context.OriginalTransaction.Inputs.Select(o => o.PrevOut).ToHashSet();
             utxos = utxos.Where(u => !prevOuts.Contains(u.Outpoint)).ToArray();
+            //let's also remove coins which are locked by other ongoing pjs
+            utxos = await _payJoinLockService.FilterOutLockedCoins(utxos);
+            
             Array.Sort(utxos, CoinDeterministicComparer.Instance);
-
-            if (_options.Value.BatchTransfersInPayjoin && false)
+           
+            if (!utxos.Any())
             {
-                //not implemented for now, this will be able to batch pending transfers inside this deposit!
-                await _transferRequestService.ProcessTask.Task;
-                
+                return;
             }
-            else
+            
+            var minRelayTxFee = _nbXplorerSummaryProvider.LastSummary?.Status?.BitcoinStatus?.MinRelayTxFee ??
+                                new FeeRate(1.0m);
+            var newTx = context.OriginalTransaction.Clone();
+            var originalPaymentOutput = newTx.Outputs[context.OriginalPaymentRequestOutput.Index];
+            HashSet<TxOut> isOurOutput = new HashSet<TxOut>();
+            isOurOutput.Add(originalPaymentOutput);
+
+            List<TxOut> newOutputs = null;
+            
+            Money contributedAmount = Money.Zero;
+            var canBatch = _options.Value.BatchTransfersInPayjoin &&
+                           context.PayjoinParameters.DisableOutputSubstitution is not true;
+
+            var batchedTransfers = new List<TransferRequestData>();
+
+            if (canBatch)
+            {
+                //we will be conservative for v1 of batchesd transfers
+
+                await _transferRequestService.ProcessTask.Task;
+                var potentialBatchedTransfers = await _transferRequestService.GetTransferRequests(
+                    new TransferRequestQuery()
+                    {
+                        Statuses = new[]
+                        {
+                            TransferStatus.Pending
+                        },
+                        TransferTypes = new[] {TransferType.External},
+                        Take = 1
+
+                    });
+                if (potentialBatchedTransfers.Any())
+                {
+                    //TODO: we can make this a loop to try out combinations of transfers to batch 
+
+                    var batchedTransfersSum = potentialBatchedTransfers.Sum(data => data.Amount);
+
+                    var runningBalanceToPaymentOutput =
+                        originalPaymentOutput.Value.ToDecimal(MoneyUnit.BTC) - batchedTransfersSum;
+                    foreach (var utxo in utxos)
+                    {
+                        var cloned = originalPaymentOutput.Clone();
+                        cloned.Value = Money.FromUnit(runningBalanceToPaymentOutput, MoneyUnit.BTC);
+                        var isDust = cloned.IsDust(minRelayTxFee);
+                        if (runningBalanceToPaymentOutput < 0 || isDust)
+                        {
+                            selectedUTXOs.Add(utxo.Outpoint, utxo);
+                            runningBalanceToPaymentOutput += utxo.Amount.ToDecimal(MoneyUnit.BTC);
+                        }
+                        else 
+                        {
+                            break;
+                        }
+                    }
+
+                    var cloned2 = originalPaymentOutput.Clone();
+                    cloned2.Value = Money.FromUnit(runningBalanceToPaymentOutput, MoneyUnit.BTC);
+                    if (runningBalanceToPaymentOutput == 0 || !cloned2.IsDust(minRelayTxFee))
+                    {
+                        originalPaymentOutput.Value = Money.FromUnit(runningBalanceToPaymentOutput, MoneyUnit.BTC);
+                        batchedTransfers.AddRange(potentialBatchedTransfers);
+                        newOutputs = batchedTransfers.Select(data =>
+                        {
+                            var txout = _network.Consensus.ConsensusFactory.CreateTxOut();
+                            
+                            txout.Value = Money.FromUnit(data.Amount, MoneyUnit.BTC);
+                            txout.ScriptPubKey = BitcoinAddress.Create(
+                                    HelperExtensions.GetAddress(data.Destination, _network, out _, out _, out _),
+                                    _network)
+                                .ScriptPubKey;
+                            return txout;
+                        }).ToList();
+                        newTx.Outputs.AddRange(newOutputs);
+                    }
+                    else
+                    {
+                        //not enough money to batch the selected transfers
+                        selectedUTXOs.Clear();
+                    }
+                    
+                }
+
+            }
+
+            if(!selectedUTXOs.Any() && !batchedTransfers.Any())
             {
                 foreach (var utxo in (await SelectUTXO(utxos,
                     context.OriginalPSBT.Inputs.Select(input => input.WitnessUtxo.Value.ToDecimal(MoneyUnit.BTC)),
@@ -117,16 +203,11 @@ namespace PrivatePond.Controllers
 
             }
            
-            if (selectedUTXOs.Count == 0)
+            if (selectedUTXOs.Count == 0 && !batchedTransfers.Any())
             {
                 return;
             }
 
-            Money contributedAmount = Money.Zero;
-            var newTx = context.OriginalTransaction.Clone();
-            var ourNewOutput = newTx.Outputs[context.OriginalPaymentRequestOutput.Index];
-            HashSet<TxOut> isOurOutput = new HashSet<TxOut>();
-            isOurOutput.Add(ourNewOutput);
             TxOut feeOutput =
                 context.PayjoinParameters.AdditionalFeeOutputIndex is int feeOutputIndex &&
                 context.PayjoinParameters.MaxAdditionalFeeContribution > Money.Zero &&
@@ -144,9 +225,7 @@ namespace PrivatePond.Controllers
                 newInput.Sequence = newTx.Inputs[rand.Next(0, senderInputCount)].Sequence;
             }
 
-            ourNewOutput.Value += contributedAmount;
-            var minRelayTxFee = _nbXplorerSummaryProvider.LastSummary?.Status?.BitcoinStatus?.MinRelayTxFee ??
-                                new FeeRate(1.0m);
+            originalPaymentOutput.Value += contributedAmount;
 
             // Remove old signatures as they are not valid anymore
             foreach (var input in newTx.Inputs)
@@ -267,8 +346,8 @@ namespace PrivatePond.Controllers
                     PayjoinTransactionHash = GetExpectedHash(newPsbt,  coins.Concat(ourCoins).ToArray()),
                     PayjoinPSBT = newPsbt,
                     ContributedInputs =ourCoins.ToArray(),
-                    ContributedOutputs = Array.Empty<TxOut>(),
-                    ModifiedPaymentRequest = ourNewOutput,
+                    ContributedOutputs = newOutputs.ToArray(),
+                    ModifiedPaymentRequest = originalPaymentOutput,
                     ExtraFeeFromAdditionalFeeOutput = feeFromOutputIndex,
                     ExtraFeeFromReceiverInputs = ourFeeContribution,
                 };
@@ -297,9 +376,11 @@ namespace PrivatePond.Controllers
                 OriginalTransactionId = originalPsbtHash.ToString(),
                 DepositRequestId = context.DepositRequest.Id
             };
-            await dbcontext.PayjoinRecords.AddAsync(context.PayjoinRecord);
 
-            await dbcontext.SigningRequests.AddAsync(new SigningRequest()
+            var batchedIds = batchedTransfers.Select(data => data.Id);
+           
+            await dbcontext.PayjoinRecords.AddAsync(context.PayjoinRecord);
+            var newSigningRequest = new SigningRequest()
             {
                 Status = SigningRequest.SigningRequestStatus.Signed,
                 Timestamp = DateTimeOffset.UtcNow,
@@ -307,8 +388,18 @@ namespace PrivatePond.Controllers
                 PSBT = context.OriginalPSBT.ToBase64(),
                 FinalPSBT = context.PayjoinReceiverWalletProposal.PayjoinPSBT.ToBase64(),
                 Type = SigningRequest.SigningRequestType.DepositPayjoin,
-                TransactionId = context.PayjoinReceiverWalletProposal.PayjoinTransactionHash.ToString()
-            });
+                TransactionId = context.PayjoinReceiverWalletProposal.PayjoinTransactionHash.ToString(),
+            };
+            await dbcontext.SigningRequests.AddAsync(newSigningRequest);
+            
+            var trsToMark = await dbcontext.TransferRequests.Where(request => batchedIds.Contains(request.Id))
+                .ToListAsync();
+            
+            foreach (var transferRequest in trsToMark)
+            {
+                transferRequest.SigningRequestId = newSigningRequest.Id;
+                transferRequest.Status = TransferStatus.Processing;
+            }
             await dbcontext.SaveChangesAsync();
         }
 

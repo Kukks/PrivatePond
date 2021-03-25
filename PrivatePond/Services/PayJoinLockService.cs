@@ -18,6 +18,17 @@ namespace PrivatePond.Controllers
         {
             _dbContextFactory = dbContextFactory;
         }
+
+        public async Task<T[]> FilterOutLockedCoins<T>(T[] coins)  where T: ICoin
+        {
+            await using var ctx = _dbContextFactory.CreateDbContext();
+            var idToCoins = coins.ToDictionary(coin => coin.Outpoint.ToString());
+            var ids = idToCoins.Keys.ToArray();
+            var matchedLocks = (await ctx.PayjoinLocks.Where(pjLock => ids.Contains(pjLock.Id)).ToArrayAsync()).Select(pjLock => pjLock.Id);
+            return idToCoins.Where(pair => !matchedLocks.Contains(pair.Key)).Select(pair => pair.Value).ToArray();
+
+        } 
+        
         public async Task<bool> TryLock(OutPoint outpoint)
         {
             await using var ctx = _dbContextFactory.CreateDbContext();

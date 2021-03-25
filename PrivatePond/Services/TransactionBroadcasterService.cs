@@ -92,11 +92,29 @@ namespace PrivatePond.Controllers
                                .Where(request =>
                                    request.SigningRequestId == scheduledTransaction.ReplacesSigningRequestId)
                                .ToListAsync(token);
-                          trs.ForEach(request =>
-                          {
-                              request.SigningRequestId = replacementSigningRequestId;
-                              request.Status = TransferStatus.Processing;
-                          });
+
+                           var failedSignedRequest =
+                               await context.SigningRequests.FindAsync(scheduledTransaction.ReplacesSigningRequestId);
+
+                           if (failedSignedRequest.Type == SigningRequest.SigningRequestType.DepositPayjoin)
+                           {
+                               //transfer requests linked to this failed signing request were batched
+                               trs.ForEach(request =>
+                               {
+                                   request.SigningRequestId = null;
+                                   request.Status = TransferStatus.Pending;
+                               });
+                           }
+                           else
+                           {
+                               trs.ForEach(request =>
+                               {
+                                   request.SigningRequestId = replacementSigningRequestId;
+                                   request.Status = TransferStatus.Processing;
+                               });
+                           }
+                           
+                           
                        };
                        context.Remove(tx);
                    }

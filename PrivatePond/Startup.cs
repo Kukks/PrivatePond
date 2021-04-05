@@ -1,3 +1,4 @@
+using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -32,6 +33,7 @@ namespace PrivatePond
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddHostedService<StartupTaskRunner>();
             services.AddNBXPlorerIntegration(Configuration);
             services.AddHttpClient();
             services.AddSingleton<SigningRequestService>();
@@ -70,8 +72,7 @@ namespace PrivatePond
             }, ServiceLifetime.Singleton);
             services.AddSingleton<IStartupTask, MigrationStartupTask>();
             services.AddControllers().AddJsonOptions(options =>
-                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter())).AddMvcOptions(options =>
-                options.InputFormatters.Insert(0, new RawRequestBodyFormatter()));
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
             
             services.AddSwaggerGen(c =>
             {

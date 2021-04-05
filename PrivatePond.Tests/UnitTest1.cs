@@ -49,8 +49,8 @@ namespace PrivatePond.Tests
                 collection =>
                 {
                     additionalServiceConfig?.Invoke(collection);
-                    Task.WaitAll(collection.BuildServiceProvider().GetServices<IStartupTask>()
-                        .Select(task => task.ExecuteAsync()).ToArray());
+                    // Task.WaitAll(collection.BuildServiceProvider().GetServices<IStartupTask>()
+                    //     .Select(task => task.ExecuteAsync()).ToArray());
                 }));
 
             var client = factory.CreateClient();

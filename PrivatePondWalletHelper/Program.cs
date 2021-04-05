@@ -33,7 +33,6 @@ namespace PrivatePondWalletHelper
             }
 
             ScriptPubKeyType kind = ScriptPubKeyType.Segwit;
-            kind:
             Console.WriteLine("What kind of wallet? (segwit|p2sh)");
             input = Console.ReadLine()?.ToLowerInvariant();
             if (input == "segwit")
@@ -57,13 +56,14 @@ namespace PrivatePondWalletHelper
                 try
                 {
                     var seed = new Mnemonic(Console.ReadLine()?.ToLowerInvariant());
-                    askMultisig:
                     Console.WriteLine("Is this intended for part of a multisig wallet? (y/n)");
 
                     input = Console.ReadLine()?.ToLowerInvariant();
                     KeyPath keyPath = null;
+                    var multsig = false;
                     if (input == "y")
                     {
+                        multsig = true;
                         var coinType = network == Network.Main ? "0'" : "1'";
                         var account = "0'";
                         var scriptType = kind == ScriptPubKeyType.Segwit ? "2'" : "1'";
@@ -78,14 +78,24 @@ namespace PrivatePondWalletHelper
                         keyPath = new KeyPath($"m/{purpose}/{coinType}/{account}");
                     }
 
-                    Console.WriteLine($"Derivation path is {keyPath}");
+                    var rootedKeyPath =
+                        new RootedKeyPath(seed.DeriveExtKey().GetPublicKey().GetHDFingerPrint(), keyPath);
                     var xpriv = seed.DeriveExtKey().Derive(keyPath);
                     Console.WriteLine($"Xpriv is {xpriv.GetWif(network)}");
                     Console.WriteLine($"Xpub is {xpriv.Neuter().GetWif(network)}");
+                    
+                    Console.WriteLine($"Derivation path is {keyPath}");
                     Console.WriteLine($"Fingerprint is {seed.DeriveExtKey().GetPublicKey().GetHDFingerPrint()}");
                     
+                    Console.WriteLine($"Rooted Keypath is: {rootedKeyPath}");
+                    if (!multsig)
+                    {
+                        Console.WriteLine($"Derivation scheme is {xpriv.Neuter().GetWif(network)}{(kind== ScriptPubKeyType.SegwitP2SH? "-[p2sh]": "")}");
+                        
+                    }
+                    
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     Console.WriteLine("Invalid seed");
                     goto seedEntry;
@@ -132,7 +142,7 @@ namespace PrivatePondWalletHelper
                         $"Xpub is {new BitcoinExtPubKey(base58Encoder.EncodeData(data), network).ToWif()}");
                     
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     Console.WriteLine($"Invalid xpub");
                     goto xpubEntry;
@@ -146,7 +156,7 @@ namespace PrivatePondWalletHelper
 
             if (kind == ScriptPubKeyType.SegwitP2SH)
             {
-                Console.WriteLine("DON'T FORGET TO ADD -[p2sh] AT THE END FOR P2SH WALLETS!");
+                Console.WriteLine("DON'T FORGET TO ADD -[p2sh] AT THE END FOR SEGWIT P2SH WALLETS!");
             }
             Console.WriteLine("Press any key to terminate.");
             Console.Read();

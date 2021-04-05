@@ -17,9 +17,7 @@ namespace PrivatePond.Data
         //Transfers processed every x minutes
         public double BatchTransfersEvery { get; set; }
         
-        //the ideal max amount of funds in percentage of the sum of total enabled wallet balances
-        // public decimal? MaximumFunds { get; set; }
-        //the ideal minimum amount of funds in percentage of the sum of total enabled wallet balances
+        //the ideal amount of funds in percentage of the sum of total enabled wallet balances
         public decimal? WalletReplenishmentIdealBalancePercentage { get; set; }
         //if the min/max is reached, suggest a transfer from/to this wallet
         public string WalletReplenishmentSource { get; set; }
